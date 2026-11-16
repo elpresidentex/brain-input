@@ -148,5 +148,5 @@ enum AppInfo {
     static let repo = URL(string: "https://github.com/elpresidentex/brain-input")!
     static let releases = URL(string: "https://github.com/elpresidentex/brain-input/releases/latest")!
     static let issues = URL(string: "https://github.com/elpresidentex/brain-input/issues")!
-    static let privacy = URL(string: "https://elpresidentex.github.io/brain-input/privacy.html")!
+    static let privacy = URL(string: "https://brain-input.vercel.app/privacy.html")!
 }

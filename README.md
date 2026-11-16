@@ -40,7 +40,7 @@ Both shortcuts can be changed in Settings, also to a single modifier key such as
 - Clean-up runs on your own Anthropic account. A dictation costs a fraction of a cent; Settings shows what the app has spent.
 - Recording a call without telling the other people is illegal in many places, Germany included. The app reminds you every time; please do tell them.
 
-Full text: [privacy page](https://elpresidentex.github.io/brain-input/privacy.html).
+Full text: [privacy page](https://brain-input.vercel.app/privacy.html).
 
 ## CLI and MCP
 

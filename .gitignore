@@ -5,3 +5,4 @@ Vendor/whisper.xcframework
 *.xcuserstate
 .claude/
 launch-kit/
+.vercel/
