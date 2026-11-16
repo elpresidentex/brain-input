@@ -35,7 +35,7 @@ Both shortcuts can be changed in Settings, also to a single modifier key such as
 ## Privacy and cost
 
 - Audio is processed on your Mac and never stored or sent anywhere. Meeting audio is not written to disk; only text is kept.
-- The app has no account, no analytics and no telemetry.
+- The app has no account and no profile of you. It sends one anonymous "opened" count at start (app and macOS version, no ID); switch it off in Settings.
 - Network use: the one-time model download (from Hugging Face), and, only if you add a Claude API key, the clean-up calls to Anthropic. Those contain the transcript, the app name and window title, your dictionary and style notes; in coding apps also text visible in the window, so names are spelled right.
 - Clean-up runs on your own Anthropic account. A dictation costs a fraction of a cent; Settings shows what the app has spent.
 - Recording a call without telling the other people is illegal in many places, Germany included. The app reminds you every time; please do tell them.

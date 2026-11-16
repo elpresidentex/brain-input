@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             if let dir = Snapshots.outDir { await Snapshots.run(to: dir) }
             else if let dir = DemoVideo.outDir { await DemoVideo.run(to: dir) }
-            else { AppState.shared.start() }
+            else { AppState.shared.start(); Telemetry.appOpened() }
         }
     }
     func applicationWillTerminate(_ notification: Notification) {
@@ -162,7 +162,7 @@ struct Chip: View {
     init(_ t: String) { text = t }
     var body: some View {
         Text(text).font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(Theme.accent.opacity(0.18)))
+            .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.07)))
     }
 }
 

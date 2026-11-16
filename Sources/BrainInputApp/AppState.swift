@@ -388,11 +388,14 @@ struct IndicatorView: View {
             case .notice(let text): Text(text).lineLimit(2)
             }
         }
-        .font(.system(size: 12, weight: .medium, design: .rounded))
-        .foregroundStyle(.white)
-        .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 22).fill(Color(red: 0.09, green: 0.10, blue: 0.16).opacity(0.92)))
-        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1))
+        .font(.system(size: 12.5, weight: .medium))
+        .foregroundStyle(Color(white: 0.06))
+        .environment(\.colorScheme, .light)
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+        .padding(.bottom, 14).padding(.horizontal, 16)
         .opacity(state.phase == .idle && !state.meetingActive ? 0 : 1)
         .animation(.easeOut(duration: 0.15), value: state.phase)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -414,5 +417,5 @@ struct LevelBars: View {
 }
 
 enum Theme {
-    static let accent = Color(red: 0.98, green: 0.62, blue: 0.24)   // warm amber on ink
+    static let accent = Color(red: 0, green: 0.459, blue: 0.871)   // the one blue; everything else is black, white and grey
 }

@@ -184,14 +184,15 @@ struct OnboardingView: View {
 
     private func header(_ title: String, _ sub: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
+            Text(title).font(.system(size: 28, weight: .semibold)).tracking(-0.8)
             Text(sub).font(.title3).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.padding(.bottom, 14)
     }
 
     private func point(_ icon: String, _ title: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: icon).font(.title2).foregroundStyle(Theme.accent).frame(width: 32)
+            Image(systemName: icon).font(.title3).foregroundStyle(.primary).frame(width: 36, height: 36)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.06)))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
                 Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -204,7 +205,7 @@ struct OnboardingView: View {
             HStack(spacing: 14) {
                 if let icon = NSApp.applicationIconImage { Image(nsImage: icon).resizable().frame(width: 64, height: 64) }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Talk. It types.").font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text("Talk. It types.").font(.system(size: 34, weight: .semibold)).tracking(-1.2)
                     Text("Brain Input turns what you say into clean text, in any app.").font(.title3).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 8)
@@ -212,7 +213,7 @@ struct OnboardingView: View {
             point("lock.laptopcomputer", "Speech recognition stays on this Mac", "Your audio is never uploaded. Only if you add your own Claude API key is the transcript text sent for clean-up.")
             point("character.book.closed", "It learns your words", "Correct a name twice and it remembers. Meetings become Me / Them notes with a summary.")
             Spacer()
-            Text("Free and open source. Setup takes about two minutes.").font(.callout).foregroundStyle(.secondary).padding(.bottom, 10)
+            Text("Free and open source. Setup takes about two minutes. The app counts that it was opened, anonymously; you can switch that off in Settings.").font(.callout).foregroundStyle(.secondary).padding(.bottom, 10)
         }
     }
 

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var apiKey = ""
     @State private var keyNote = ""
     @State private var launchAtLogin = LoginItem.enabled
+    @State private var anonymousPing = Telemetry.enabled
     @State private var keyStored = false
     @State private var axTrusted = ClipboardPaster.trusted
     @State private var mic = MicRecorder.permission
@@ -27,6 +28,9 @@ struct SettingsView: View {
                 Toggle("Start Brain Input when I log in", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { LoginItem.set(launchAtLogin); launchAtLogin = LoginItem.enabled }
                 Button("Open the setup guide…") { OnboardingController.shared.show() }
+                Toggle("Count app opens anonymously", isOn: $anonymousPing).onChange(of: anonymousPing) { Telemetry.enabled = anonymousPing }
+                Text("Sends \"opened\" with the app and macOS version when the app starts, so I can see whether anyone uses it. No ID, nothing about what you dictate.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             SwiftUI.Section("Shortcuts") {
                 ShortcutField(title: "Dictate", get: { Pref.dictate }, set: { Pref.dictate = $0 })
