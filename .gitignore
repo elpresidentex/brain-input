@@ -1,0 +1,7 @@
+.build/
+build/
+Vendor/whisper.xcframework
+.DS_Store
+*.xcuserstate
+.claude/
+launch-kit/

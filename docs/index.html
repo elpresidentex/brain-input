@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brain Input · Talk. It types.</title>
+<meta name="description" content="Free, open-source dictation for Mac. Hold a key, speak, and clean text lands at your cursor, formatted for the app you are in. Speech recognition runs on your Mac.">
+<meta property="og:title" content="Brain Input · Talk. It types.">
+<meta property="og:description" content="Free, open-source dictation for Mac. Speech recognition runs on your Mac. Built in a weekend with Claude Fable.">
+<meta property="og:image" content="https://elpresidentex.github.io/brain-input/media/still-email.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="nav">
+    <a class="brand" href="./"><img src="media/icon.png" alt="">Brain Input</a>
+    <nav>
+      <a class="hide" href="#features">Features</a>
+      <a class="hide" href="#privacy">Privacy</a>
+      <a class="hide" href="#faq">Questions</a>
+      <a href="https://github.com/elpresidentex/brain-input">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <span class="tag">Free · open source · beta</span>
+    <h1>Talk. <em>It types.</em></h1>
+    <p class="lead">Hold a key, say it the way you think it, and get it the way you would write it. In any app on your Mac, with speech recognition that never leaves it.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest">Download for Mac</a>
+      <a class="btn ghost" href="https://github.com/elpresidentex/brain-input">View the source</a>
+    </div>
+    <p class="req">Apple Silicon · macOS 26 or newer · no account, no subscription</p>
+    <div class="stage">
+      <video src="media/demo.mp4" poster="media/still-email.jpg" autoplay muted loop playsinline aria-label="Demo: a spoken, rambling message becomes a clean email, a chat list and a coding prompt"></video>
+    </div>
+    <p class="note">Demo with sample text.</p>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <h2>One key. It reads the room.</h2>
+    <p class="sub">The same voice comes out differently depending on where your cursor is.</p>
+    <div class="shots">
+      <figure><img src="media/still-email.jpg" alt="A clean email with greeting, paragraphs and sign-off" loading="lazy"><figcaption><b>Email</b>Paragraphs, greeting and sign-off. Filler words and "no wait, I mean" are gone.</figcaption></figure>
+      <figure><img src="media/still-chat.jpg" alt="A spoken list turned into a numbered chat message" loading="lazy"><figcaption><b>Chat</b>Short and casual. Say a list and it becomes a list.</figcaption></figure>
+      <figure><img src="media/still-code.jpg" alt="A dictated prompt with file names spelled as on screen" loading="lazy"><figcaption><b>Code</b>A prompt for your coding agent, with file and function names spelled as they are on screen.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>What is in the box</h2>
+    <p class="sub">Small app, short list.</p>
+    <div class="grid">
+      <div class="card"><span class="k">Dictation</span><h3>Works where you type</h3><p>Mail, Slack, WhatsApp, Notes, your browser, your editor. Hold to talk or tap to start and stop. Esc cancels.</p></div>
+      <div class="card"><span class="k">Local</span><h3>Your voice stays home</h3><p>Speech recognition runs on your Mac with Parakeet or Whisper. It works offline. Audio is never stored or uploaded.</p></div>
+      <div class="card"><span class="k">Clean-up</span><h3>Optional, with your own key</h3><p>Add a Claude API key and the transcript is tidied and formatted. Skip it and you get exactly what you said.</p></div>
+      <div class="card"><span class="k">Learning</span><h3>It learns your words</h3><p>Fix a misheard name twice and it lands in your dictionary. Style notes per app keep the text sounding like you.</p></div>
+      <div class="card"><span class="k">Meetings</span><h3>Notes without a bot</h3><p>Records both sides of a call on your Mac and writes a Me / Them transcript with summary, decisions and action items.</p></div>
+      <div class="card"><span class="k">Yours</span><h3>Plain files, open to agents</h3><p>Everything is Markdown in a folder. A small CLI and an MCP server let Claude or Cursor pull up your last meeting.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap split">
+    <div>
+      <h2>Two minutes from download to first sentence</h2>
+      <ul class="plain">
+        <li><b>Download a speech model.</b> One click in the setup guide, about 460 MB.</li>
+        <li><b>Allow microphone and accessibility.</b> The guide explains what each is for.</li>
+        <li><b>Add a Claude key, or don't.</b> It is optional and you can do it later.</li>
+        <li><b>Hold the key and talk.</b></li>
+      </ul>
+    </div>
+    <img src="media/onboarding-2-dark.png" alt="Setup guide: choose and download a speech model" loading="lazy">
+  </div>
+</section>
+
+<section class="band" id="privacy">
+  <div class="wrap split">
+    <img src="media/main-meetings-dark.png" alt="A meeting note with summary, decisions, action items and a Me / Them transcript" loading="lazy">
+    <div>
+      <h2>Private by design, honest about cost</h2>
+      <ul class="plain">
+        <li><b>No account, no analytics, no telemetry.</b> The app talks to nobody on its own.</li>
+        <li><b>Audio never leaves your Mac.</b> Meeting audio is not even written to disk.</li>
+        <li><b>Clean-up is your call.</b> With your own key, only text goes to Anthropic, on your account. A dictation costs a fraction of a cent and the app shows your total.</li>
+        <li><b>Tell people before you record a call.</b> The app reminds you every time.</li>
+      </ul>
+      <p style="margin-top:18px"><a href="privacy.html">Read the full privacy page</a></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap story">
+    <h2>Why this exists</h2>
+    <p>I did not want to pay around 15 to 20 euros a month for dictation when the hard parts are open: the speech models are free and run on a laptop. So I wrote a long brief, handed it to <b>Claude Fable</b>, and went away from the keyboard. A few weekend hours later there was a working app. I have been using it every day since.</p>
+    <p>It is not a business. It is free, the source is open under GPL-3.0, and it stands on the shoulders of <a href="https://github.com/Beingpax/VoiceInk">VoiceInk</a>, <a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a> and <a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a>. The feature set is inspired by <a href="https://www.monologue.to/">Monologue</a>, which is the polished, supported product if that is what you need.</p>
+    <p>It is a beta. Try it, break it, and <a href="https://github.com/elpresidentex/brain-input/issues">tell me what happened</a>.</p>
+    <p>Armin</p>
+  </div>
+</section>
+
+<section class="band" id="faq">
+  <div class="wrap">
+    <h2>Questions</h2>
+    <details><summary>Is it really free?</summary><p>Yes. The app is free and open source. Dictation with the local model costs nothing. The optional clean-up uses your own Claude API key and Anthropic bills you for it directly; in normal use that is cents, and the app shows the running total.</p></details>
+    <details><summary>Which Macs does it run on?</summary><p>Macs with Apple Silicon (M1 or newer) on macOS 26 or newer. There is no Intel, Windows or iPhone version.</p></details>
+    <details><summary>Which languages?</summary><p>Parakeet covers 25 European languages, including English, German, Spanish and French. Whisper covers about 100 and can be downloaded in Settings. The language is detected for each dictation.</p></details>
+    <details><summary>What does the app send over the network?</summary><p>The one-time model download, and, only with your API key, the clean-up calls. Those contain the transcript, the app name and window title, your dictionary and style notes; in coding apps also visible window text so names are spelled right. Never audio.</p></details>
+    <details><summary>Something is broken. Where do I report it?</summary><p>On <a href="https://github.com/elpresidentex/brain-input/issues">GitHub Issues</a>. There is no support team, just me, but I read everything.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <span>Brain Input · free software under GPL-3.0 · no warranty</span>
+    <span><a href="https://github.com/elpresidentex/brain-input">GitHub</a> · <a href="privacy.html">Privacy</a> · <a href="imprint.html">Imprint</a></span>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,56 @@
+#!/bin/bash
+# Builds build/BrainInput.app (release), embeds whisper.framework and the `brain` CLI, and signs it
+# with a stable identity so macOS keeps granted permissions across rebuilds.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+[ -e Vendor/whisper.xcframework ] || scripts/fetch-whisper.sh
+VERSION="${VERSION:-0.1.0}"
+swift build -c release 2>&1 | tail -3
+BIN=.build/release
+APP=build/BrainInput.app
+rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
+cp "$BIN/BrainInputApp" "$APP/Contents/MacOS/BrainInput"
+cp "$BIN/brain" "$APP/Contents/MacOS/brain"
+cp Assets/AppIcon.icns Assets/MenuBarIcon*.png "$APP/Contents/Resources/"
+ditto Vendor/whisper.xcframework/macos-arm64_x86_64/whisper.framework "$APP/Contents/Frameworks/whisper.framework"
+for b in BrainInput brain; do install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/$b" 2>/dev/null || true; done
+cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.arminbognar.BrainInput</string>
+  <key>CFBundleName</key><string>Brain Input</string>
+  <key>CFBundleDisplayName</key><string>Brain Input</string>
+  <key>CFBundleExecutable</key><string>BrainInput</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>LSUIElement</key><true/>
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+  <key>NSHumanReadableCopyright</key><string>Free software under GPL-3.0. No warranty.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Brain Input listens only while you hold the dictation key or record a meeting you started.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Brain Input records the other side of a call only during a meeting recording you started.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Brain Input reads the current calendar event to title meeting notes and list participants.</string>
+</dict></plist>
+PLIST
+# RELEASE=1: Developer ID, hardened runtime and a secure timestamp, as notarization requires (see scripts/release.sh).
+if [ "${RELEASE:-0}" = 1 ]; then
+  ID="${BRAININPUT_SIGN_ID:-$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')}"
+  [ -n "$ID" ] || { echo "no Developer ID Application certificate in the keychain"; exit 1; }
+  OPTS=(--force --timestamp --options runtime --entitlements scripts/BrainInput.entitlements)
+else
+  ID="${BRAININPUT_SIGN_ID:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/{print $2; exit}')}"
+  OPTS=(--force --timestamp=none)
+fi
+if [ -n "$ID" ]; then
+  codesign "${OPTS[@]}" --sign "$ID" "$APP/Contents/Frameworks/whisper.framework"
+  codesign "${OPTS[@]}" --sign "$ID" "$APP/Contents/MacOS/brain"
+  codesign "${OPTS[@]}" --sign "$ID" "$APP"
+  echo "signed with: $ID"
+else
+  codesign --force --deep --sign - "$APP"
+  echo "WARNING: no signing identity found; ad-hoc signed (permissions reset on every rebuild)"
+fi
+echo "built $APP"
