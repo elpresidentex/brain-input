@@ -125,6 +125,9 @@ final class HotkeyCenter {
 
     private let modifierWatcher = ModifierWatcher()
 
+    /// Called once Accessibility is granted while running: a global monitor added before that never receives events.
+    func accessibilityGranted() { modifierWatcher.reinstallMonitors() }
+
     func register(id: UInt32, shortcut: Shortcut, down: @escaping () -> Void, up: @escaping () -> Void = {}) {
         install()
         if let old = refs[id] { UnregisterEventHotKey(old); refs[id] = nil }
@@ -179,6 +182,13 @@ final class ModifierWatcher {
     }
 
     func remove(_ id: UInt32) { entries[id]?.pending?.cancel(); entries[id] = nil }
+
+    func reinstallMonitors() {
+        guard !monitors.isEmpty else { return }
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        installIfNeeded()
+    }
 
     private func installIfNeeded() {
         guard monitors.isEmpty else { return }

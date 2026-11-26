@@ -84,6 +84,7 @@ final class AppState: ObservableObject {
         indicator.attach(self)
         registerHotkeys()
         installEscapeMonitor()
+        reinstallMonitorsWhenTrusted()
         loadModel()
         reloadHistory()
         meetings.startWatching()
@@ -301,12 +302,27 @@ final class AppState: ObservableObject {
     /// only arms it and shows "Press Esc again to cancel" with a countdown, so a stray Esc meant for the app in
     /// front no longer throws away a long dictation. (Same idea as VoiceInk's double-press Escape.)
     private func installEscapeMonitor() {
+        escMonitors.forEach(NSEvent.removeMonitor)
+        escMonitors = []
         let handler: (NSEvent) -> Void = { e in
             guard e.keyCode == UInt16(kVK_Escape) else { return }
             DispatchQueue.main.async { AppState.shared.escapePressed() }
         }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler) { escMonitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { e in handler(e); return e }) { escMonitors.append(l) }
+    }
+
+    /// A global key monitor added before Accessibility was granted stays deaf after the grant, so Esc (and a
+    /// modifier-only shortcut) only worked in other apps after a relaunch. Until trust arrives, check every 2 s,
+    /// then add the monitors again.
+    private func reinstallMonitorsWhenTrusted() {
+        guard !ClipboardPaster.trusted else { return }
+        Task { @MainActor in
+            while !ClipboardPaster.trusted { try? await Task.sleep(for: .seconds(2)) }
+            installEscapeMonitor()
+            HotkeyCenter.shared.accessibilityGranted()
+            Log.write("accessibility granted; key monitors reinstalled")
+        }
     }
 
     func escapePressed() {
