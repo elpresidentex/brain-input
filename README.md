@@ -28,9 +28,12 @@ Requirements: a Mac with Apple Silicon and macOS 26 or newer. About 1 GB of free
 | Dictate | hold `⌃⌥Space`, speak, release (a short tap starts and stops instead; `Esc` cancels) |
 | Swap the last dictation for the raw transcript | `⌃⌥Z` |
 | Record a meeting | accept the offer that appears when a call starts, or menu bar › Record a Meeting… |
-| Everything else | menu bar icon › Open Brain Input… |
+| Transcribe a file | drop audio or video (m4a, mp3, wav, aiff, flac, mp4, mov…) on Transcribe in the window, or menu bar › Transcribe a File… |
+| Everything else | menu bar icon › Open Brain Input… (Dictations, Meetings, Transcribe, Search, Dictionary, Modes, Style, Settings) |
 
 Both shortcuts can be changed in Settings, also to a single modifier key such as the right `⌘`.
+
+Notes are plain Markdown in `~/BrainInput/` (`Dictations/`, `Meetings/`, `Transcripts/`, `Style/`), with a rebuildable SQLite index at `~/BrainInput/.index.sqlite`.
 
 ## Privacy and cost
 
@@ -47,8 +50,10 @@ Full text: [privacy page](https://brain-input.vercel.app/privacy.html).
 The app bundle contains `brain` (`/Applications/Brain Input.app/Contents/MacOS/brain`):
 
 ```bash
-brain search "launch date"       # full-text search, --kind meeting|dictation, --json
-brain last-meeting
+brain search "launch date"            # full-text search, --kind meeting|dictation|transcript, --json
+brain transcribe memo.m4a --timestamps # any audio or video file; --save keeps it in Transcripts/
+brain last-meeting                    # newest meeting note
+brain read Meetings/<file>.md
 brain history 5
 brain models                     # speech models and whether they are installed
 brain mcp                        # MCP server over stdio (read-only: search_notes, read_note, list_meetings, last_meeting, recent_dictations)
@@ -62,10 +67,16 @@ Claude Code: `claude mcp add brain-input -- "/Applications/Brain Input.app/Conte
 brew install cmake
 scripts/fetch-whisper.sh     # builds whisper.xcframework from whisper.cpp, once
 scripts/build-app.sh         # release build in build/BrainInput.app
-swift test                   # 33 tests; no paid API calls, no permissions needed
+swift test                   # 79 tests, about 80 s; no paid API calls, no permissions needed
 ```
 
+79 tests, about 80 s. They run the real whisper model on `say`-generated English and German fixtures (`scripts/make-fixtures.sh`), a simulated two-sided meeting, the learning code on before/after text, and the clean-up and style code against a mock model. No test calls a paid API or needs a permission. Tests are skipped, not failed, if the whisper model is missing.
+
+The build script refuses a checkout that lacks commits from your local `master`; `ALLOW_STALE=1` overrides that.
+
 Needs the Xcode 26 toolchain. `scripts/release.sh` makes the signed and notarized DMG. Design notes are in [`dev-notes/decisions.md`](dev-notes/decisions.md); the brief the first version was built from is in [`dev-notes/original-brief.md`](dev-notes/original-brief.md).
+
+On a Mac that has VoiceInk's whisper.cpp build in `~/VoiceInk-Dependencies/whisper.cpp/build-apple/`, `scripts/setup-vendor.sh --install-hook` links that framework instead of building it, and adds a git `post-checkout` hook so every new checkout or `git worktree add` gets the link.
 
 ## Credits and licence
 

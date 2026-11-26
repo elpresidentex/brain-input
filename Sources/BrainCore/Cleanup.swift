@@ -81,6 +81,16 @@ public enum CleanupPrompt {
 
 public struct CleanupTimeout: Error {}
 
+/// Lets the model task and the polisher write into one CleanupDetail across the task group.
+final class DetailBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var d = CleanupDetail()
+    var value: CleanupDetail {
+        get { lock.withLock { d } }
+        set { lock.withLock { d = newValue } }
+    }
+}
+
 extension CleanupPolisher {
     /// Fewer words than this are not worth a paid call: there is nothing to clean up.
     public static let minWords = 12
@@ -108,14 +118,25 @@ public final class CleanupPolisher: Polisher, @unchecked Sendable {
         if Task.isCancelled { return PolishResult(text: nil, modeID: mode.id, status: "cancelled", ms: 0) }
         if Self.wordCount(raw) < Self.minWords { return PolishResult(text: nil, modeID: mode.id, status: "skipped: too short", ms: 0) }
         let t0 = Date()
+        let box = DetailBox()
+        box.value.model = (model as? ClaudeModel)?.model ?? ""
+        box.value.inputChars = raw.count
+        let tPrompt = Date()
         let system = CleanupPrompt.system(mode: mode, styleCard: styleCard(mode.id), dictionary: dictionary())
+        box.value.promptMs = msSince(tPrompt)
         do {
             let out = try await withThrowingTaskGroup(of: Completion.self) { group in
                 group.addTask {
                     try Task.checkCancellation()
+                    let tScreen = Date()
                     let screen = mode.readsScreen ? await reader.visibleText(maxChars: 6000) : nil
+                    box.value.screenReadMs = msSince(tScreen)
+                    let tUser = Date()
                     let user = CleanupPrompt.user(raw: raw, language: language, context: context, screen: screen)
+                    box.value.promptMs += msSince(tUser)
                     try Task.checkCancellation()
+                    let tApi = Date()
+                    defer { box.value.apiMs = msSince(tApi) }
                     return try await model.completeDetailed(system: system, user: user, maxTokens: max(1024, raw.count))
                 }
                 group.addTask { [timeout] in
@@ -125,16 +146,19 @@ public final class CleanupPolisher: Polisher, @unchecked Sendable {
                 defer { group.cancelAll() }
                 return try await group.next()!
             }
+            box.value.net = out.net
+            box.value.inputTokens = out.usage?.input; box.value.outputTokens = out.usage?.output; box.value.cacheReadTokens = out.usage?.cacheRead
             guard let text = CleanupPrompt.sanitize(out.text, raw: raw) else {
-                return PolishResult(text: nil, modeID: mode.id, status: "error: rejected output", ms: msSince(t0), costUSD: out.costUSD)
+                return PolishResult(text: nil, modeID: mode.id, status: "error: rejected output", ms: msSince(t0), costUSD: out.costUSD, detail: box.value)
             }
-            return PolishResult(text: text, modeID: mode.id, status: "ok", ms: msSince(t0), costUSD: out.costUSD)
+            box.value.outputChars = text.count
+            return PolishResult(text: text, modeID: mode.id, status: "ok", ms: msSince(t0), costUSD: out.costUSD, detail: box.value)
         } catch is CancellationError {
-            return PolishResult(text: nil, modeID: mode.id, status: "cancelled", ms: msSince(t0))
+            return PolishResult(text: nil, modeID: mode.id, status: "cancelled", ms: msSince(t0), detail: box.value)
         } catch is CleanupTimeout {
-            return PolishResult(text: nil, modeID: mode.id, status: "timeout", ms: msSince(t0))
+            return PolishResult(text: nil, modeID: mode.id, status: "timeout", ms: msSince(t0), detail: box.value)
         } catch {
-            return PolishResult(text: nil, modeID: mode.id, status: "error: \(String(describing: error).prefix(120))", ms: msSince(t0))
+            return PolishResult(text: nil, modeID: mode.id, status: "error: \(String(describing: error).prefix(120))", ms: msSince(t0), detail: box.value)
         }
     }
 }

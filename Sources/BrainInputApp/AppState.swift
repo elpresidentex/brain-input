@@ -7,35 +7,57 @@ import SwiftUI
 enum Phase: Equatable {
     case idle, starting, recording, transcribing, polishing
     case notice(String)
+    /// A dictation is under way and Esc can cancel it.
+    var isActive: Bool { self == .recording || self == .transcribing || self == .polishing }
 }
 
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
 
-    @Published var phase: Phase = .idle
+    @Published var phase: Phase = .idle {
+        // A first Esc only counts for the dictation it was pressed in.
+        didSet { if !phase.isActive { escDeadline = nil } }
+    }
+    /// Which page the main window shows; the menu's History and Settings items set it.
+    @Published var mainSection: Section? = .history
+    /// Set by a first Esc while recording or processing: a second Esc before this moment cancels.
+    @Published var escDeadline: Date?
+    static let escWindow: TimeInterval = 3
     @Published var level: Float = 0
     @Published var modelReady = false
     @Published var modelStatus = "Loading speech model…"
     @Published var history: [DictationRecord] = []
     @Published var refreshTick = 0
     @Published var meetingActive = false
+    /// A dropped file is being transcribed: it holds the speech engine, so a dictation waits behind it.
+    @Published var fileTranscribing = false
     @Published var meetingClock = "00:00"
 
     let store: NotesStore
     let paster = ClipboardPaster()
     let reader = AXContextReader()
     let mic = MicRecorder()
+
+    /// The microphone choice changed (or the chosen one went away): rebuild the warm engine on the next dictation.
+    func micDeviceChanged(onlyIfSelectedGone: Bool = false) {
+        if onlyIfSelectedGone && MicDevices.selectedDeviceID != nil { return }
+        mic.resetDevice()
+    }
     let indicator = IndicatorController()
     let modes = ModeStore()
     let dictionary = DictionaryStore()
     let styles = StyleStore()
     var learner: EditLearner?
     lazy var meetings = MeetingController(state: self)
+    lazy var files = FileTranscriptionController(state: self)
     @Published var styleBusy: String?
     var whisper: (any LocalSpeechModel)?
     @Published var preview = ""
     private var previewTask: Task<Void, Never>?
+    private var feedTask: Task<Void, Never>?
+    /// Transcribes the current recording chunk by chunk while I talk; nil when not recording.
+    private var live: IncrementalTranscriber?
     var pipeline: DictationPipeline?
     private var loadGeneration = 0
     private var pressedAt: Date?
@@ -238,17 +260,27 @@ final class AppState: ObservableObject {
 
     func finishDictation() {
         guard phase == .recording else { return }
+        let tRelease = Date()
+        // Taken before stopPreview() resets them: a preview transcription still running holds the speech engine,
+        // and the real transcription queues behind it.
+        let previewAtRelease = (inFlight: previewInFlight, runs: previewRuns, engineMs: previewEngineMs)
+        let live = self.live
         stopPreview()
         let samples = mic.stop()
         level = 0
-        guard samples.count > 4800, let pipeline else { phase = .idle; return }   // under 0.3 s: an accidental tap
+        guard samples.count > 4800, let pipeline else {     // under 0.3 s: an accidental tap
+            if let live { Task { await live.cancel() } }
+            phase = .idle; return
+        }
         phase = .transcribing
         processingTask = Task {
-            let rec = await pipeline.process(samples: samples) { stage in
+            let seed = TraceSeed(stopMs: msSince(tRelease), previewInFlight: previewAtRelease.inFlight, previewRuns: previewAtRelease.runs,
+                                 previewEngineMs: previewAtRelease.engineMs, meetingActive: AppState.shared.meetingActive)
+            let rec = await pipeline.process(samples: samples, live: live, seed: seed) { stage in
                 Task { @MainActor in if stage == .polishing, AppState.shared.phase == .transcribing { AppState.shared.phase = .polishing } }
             }
             if let rec {
-                Log.write("dictation app=\(rec.context.bundleID) mode=\(rec.modeID) audio=\(rec.timings.audioMs)ms transcribe=\(rec.timings.transcribeMs)ms cleanup=\(rec.timings.cleanupMs)ms(\(rec.cleanupStatus)) insert=\(rec.timings.insertMs)ms total=\(rec.timings.totalMs)ms")
+                Log.write("dictation app=\(rec.context.bundleID) mode=\(rec.modeID) audio=\(rec.timings.audioMs)ms transcribe=\(rec.timings.transcribeMs)ms\(Self.detailLog(rec)) cleanup=\(rec.timings.cleanupMs)ms(\(rec.cleanupStatus)) insert=\(rec.timings.insertMs)ms total=\(rec.timings.totalMs)ms")
                 // A new dictation may already be recording; only clear our own progress state.
                 if phase == .transcribing || phase == .polishing {
                     phase = .idle
@@ -265,54 +297,138 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Esc drops a recording, or a transcription in progress, without inserting anything.
+    /// Esc twice drops a recording, or a transcription in progress, without inserting anything. The first press
+    /// only arms it and shows "Press Esc again to cancel" with a countdown, so a stray Esc meant for the app in
+    /// front no longer throws away a long dictation. (Same idea as VoiceInk's double-press Escape.)
     private func installEscapeMonitor() {
         let handler: (NSEvent) -> Void = { e in
             guard e.keyCode == UInt16(kVK_Escape) else { return }
-            DispatchQueue.main.async { AppState.shared.cancelDictation() }
+            DispatchQueue.main.async { AppState.shared.escapePressed() }
         }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler) { escMonitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { e in handler(e); return e }) { escMonitors.append(l) }
     }
 
+    func escapePressed() {
+        guard phase.isActive else { return }
+        if let d = escDeadline, d > Date() { escDeadline = nil; cancelDictation(); return }
+        let deadline = Date().addingTimeInterval(Self.escWindow)
+        escDeadline = deadline
+        Task {
+            try? await Task.sleep(for: .seconds(Self.escWindow))
+            if escDeadline == deadline { escDeadline = nil }
+        }
+    }
+
+    func copyLastTranscription() {
+        guard let last = store.dictations(limit: 1).first else { notice("Nothing to copy yet"); return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(last.best, forType: .string)
+        notice("Copied last transcription", seconds: 1.5)
+    }
+
     func cancelDictation() {
         switch phase {
         case .recording:
+            if let live { Task { await live.cancel() } }
             stopPreview(); _ = mic.stop(); level = 0; toggledOn = false
             notice("Cancelled", seconds: 1)
         case .transcribing, .polishing:
             processingTask?.cancel(); processingTask = nil
+            if let pendingLive { Task { await pendingLive.cancel() } }
             notice("Cancelled", seconds: 1)
         default: return
         }
         Log.write("dictation cancelled with Esc")
     }
 
-    // MARK: Live preview
-    // While recording, the audio so far is transcribed again every second or so and shown in the indicator, so a
-    // wrong microphone or a model that does not understand me shows up after two seconds, not after five minutes.
+    // MARK: Live transcription and preview
+    // While recording, finished chunks of speech are transcribed once each (IncrementalTranscriber), and the indicator
+    // shows their text plus a preview of the chunk still open, so a wrong microphone or a model that does not
+    // understand me shows up after two seconds, not after five minutes. Before, the last 30 s were transcribed again
+    // every second, and the whole recording once more after release.
+
+    private var previewInFlight = false
+    private var previewRuns = 0
+    private var previewEngineMs = 0
+    /// The live transcriber of the dictation being processed, so Esc can stop its remaining chunks.
+    private var pendingLive: IncrementalTranscriber?
+    /// Held while recording: BrainInput is a background app then, and App Nap may stretch its timers (the feed and
+    /// preview loops sleep 50 ms) far beyond what the bench measures.
+    private var recordingActivity: NSObjectProtocol?
 
     private func startPreview() {
         preview = ""
-        previewTask?.cancel()
-        previewTask = Task { [weak self] in
-            var lastCount = 0
+        previewInFlight = false; previewRuns = 0; previewEngineMs = 0
+        previewTask?.cancel(); feedTask?.cancel()
+        guard let pipeline else { return }
+        if recordingActivity == nil {
+            recordingActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical],
+                                                                      reason: "Live dictation preview")
+        }
+        let mic = self.mic
+        let box = LiveBox()
+        // Feeding runs on its own task so a preview call that waits for the engine never delays it; one task, so
+        // samples arrive in order.
+        feedTask = Task.detached {
+            let live = await pipeline.makeLive()
+            let current = await MainActor.run { () -> Bool in
+                guard !Task.isCancelled else { return false }      // released before setup finished: one-shot path
+                box.live = live; AppState.shared.live = live; AppState.shared.pendingLive = live
+                return true
+            }
+            guard current else { return }
+            var offset = 0
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(900))
-                guard let self, !Task.isCancelled, let whisper = self.whisper else { return }
-                let samples = self.mic.snapshot()
-                guard samples.count > 16_000, samples.count > lastCount + 8_000 else { continue }   // at least 0.5 s of new audio
-                lastCount = samples.count
-                // Only the last 30 s: the preview must stay cheap however long I talk.
-                let window = Array(samples.suffix(480_000))
-                if let t = try? await whisper.transcribe(samples: window, prompt: nil), !Task.isCancelled, self.phase == .recording {
-                    self.preview = DictationPipeline.tidy(t.text)
-                }
+                let new = mic.samples(since: offset)
+                if !new.isEmpty { await live.feed(new, from: offset); offset += new.count }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        // Asks every 50 ms; live.preview() itself decides when enough new audio arrived and the engine is free, so on
+        // Parakeet previews run back to back and the text trails speech by about 0.4 s (0.7 s with the old 300 ms
+        // poll and 0.5 s step).
+        previewTask = Task { [weak self] in
+            // How long the 50 ms sleep really takes, and how often the shown text changes: logged per dictation, so a
+            // preview that feels slow in the app can be told apart from one that is slow in the engine.
+            var slept: [Int] = [], updates = 0
+            let t0 = Date()
+            while !Task.isCancelled {
+                let ts = Date()
+                try? await Task.sleep(for: .milliseconds(50))
+                slept.append(msSince(ts))
+                guard let self, !Task.isCancelled, let live = box.live else { continue }
+                self.previewInFlight = true
+                let text = await live.preview()
+                self.previewInFlight = false
+                if !Task.isCancelled, self.phase == .recording, text != self.preview { self.preview = text; updates += 1 }
+            }
+            let s = slept.sorted()
+            if s.count > 10 {
+                Log.write("preview loop: sleep 50 ms took median \(s[s.count / 2]) p90 \(s[s.count * 9 / 10]) max \(s.last!) ms; text changed \(updates)x in \(msSince(t0)) ms")
             }
         }
     }
 
-    private func stopPreview() { previewTask?.cancel(); previewTask = nil; preview = "" }
+    /// One-line timing breakdown for the log, e.g. " [queue=2100 load=0 infer=900 ctx=3 preview=live]".
+    static func detailLog(_ r: DictationRecord) -> String {
+        guard let d = r.timings.detail else { return "" }
+        var s = " [stop=\(d.stopMs) queue=\(d.queueWaitMs) load=\(d.loadMs) infer=\(d.inferenceMs) ctx=\(d.contextMs)/\(d.contextWaitMs) engine=\(d.engine) preview=\(d.previewInFlight ? "live" : "idle")x\(d.previewRuns) thermal=\(d.thermal)"
+        if d.meetingActive { s += " meeting" }
+        if let c = d.cleanup {
+            s += " | cleanup screen=\(c.screenReadMs) api=\(c.apiMs)"
+            if let n = c.net { s += " connect=\(n.connectMs) ttfb=\(n.ttfbMs) dl=\(n.downloadMs)\(n.reusedConnection ? " reused" : "")" }
+            if let o = c.outputTokens { s += " outTok=\(o)" }
+        }
+        return s + "]"
+    }
+
+    /// Stops the preview and the live feed. The live transcriber itself keeps its chunks for finishDictation().
+    private func stopPreview() {
+        previewTask?.cancel(); previewTask = nil; feedTask?.cancel(); feedTask = nil
+        live = nil; preview = ""
+        if let a = recordingActivity { ProcessInfo.processInfo.endActivity(a); recordingActivity = nil }
+    }
 
     func undoToRaw() {
         Task {
@@ -338,14 +454,19 @@ final class AppState: ObservableObject {
     func reloadHistory() { history = store.dictations(limit: 300); refreshTick += 1 }
 }
 
+/// Hands the live transcriber from the feed task to the preview task.
+@MainActor private final class LiveBox { var live: IncrementalTranscriber? }
+
 // MARK: - Floating indicator
 
 final class IndicatorController {
     private var panel: NSPanel?
     private var observer: Any?
+    /// The meeting counter has its own panel up top, so it never covers a call app's controls at the bottom.
+    private let badge = MeetingBadgeController()
 
     @MainActor func attach(_ state: AppState) {
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 110), styleMask: [.borderless, .nonactivatingPanel],
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 150), styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
         p.level = .statusBar; p.ignoresMouseEvents = true
@@ -356,6 +477,7 @@ final class IndicatorController {
         }
         p.orderFrontRegardless()
         panel = p
+        badge.attach(state)
     }
 
     /// Follows the screen the pointer is on, so the pill shows where I am working.
@@ -370,12 +492,16 @@ struct IndicatorView: View {
     @EnvironmentObject var state: AppState
 
     var body: some View {
+        VStack(spacing: 8) {
+            if let deadline = state.escDeadline, state.phase.isActive { EscHint(deadline: deadline) }
+            pill
+        }
+        .animation(.easeOut(duration: 0.15), value: state.escDeadline)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+
+    private var pill: some View {
         HStack(spacing: 10) {
-            if state.meetingActive {
-                Circle().fill(.red).frame(width: 9, height: 9)
-                Text("Meeting · \(state.meetingClock)").monospacedDigit()
-                if state.phase != .idle { Divider().frame(height: 14) }
-            }
             switch state.phase {
             case .idle: EmptyView()
             case .starting: ProgressView().controlSize(.small); Text("Starting microphone…")
@@ -383,22 +509,46 @@ struct IndicatorView: View {
                 LevelBars(level: state.level)
                 if state.preview.isEmpty { Text("Listening") }
                 else { Text(state.preview).lineLimit(3).truncationMode(.head).multilineTextAlignment(.leading).frame(maxWidth: 340, alignment: .leading) }
-            case .transcribing: ProgressView().controlSize(.small); Text("Transcribing")
+            case .transcribing: ProgressView().controlSize(.small); Text(state.fileTranscribing ? "Waiting for file transcription…" : "Transcribing")
             case .polishing: ProgressView().controlSize(.small); Text("Polishing")
             case .notice(let text): Text(text).lineLimit(2)
             }
         }
-        .font(.system(size: 12.5, weight: .medium))
-        .foregroundStyle(Color(white: 0.06))
-        .environment(\.colorScheme, .light)
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12).fill(.white))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
-        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
-        .padding(.bottom, 14).padding(.horizontal, 16)
-        .opacity(state.phase == .idle && !state.meetingActive ? 0 : 1)
+        .font(.system(size: 12, weight: .medium, design: .rounded))
+        .foregroundStyle(.white)
+        .environment(\.colorScheme, .dark)   // the dark pill needs light spinners, not black ones
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 22).fill(Theme.ink.opacity(0.94)))
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Theme.mint.opacity(0.55), lineWidth: 1))
+        .opacity(state.phase == .idle ? 0 : 1)
         .animation(.easeOut(duration: 0.15), value: state.phase)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+}
+
+/// "Press Esc again to cancel", with a ring and a number counting down the seconds left to do it.
+struct EscHint: View {
+    var deadline: Date
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let left = max(0, deadline.timeIntervalSince(ctx.date))
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().stroke(Theme.mint.opacity(0.25), lineWidth: 2)
+                    Circle().trim(from: 0, to: left / AppState.escWindow).rotation(.degrees(-90))
+                        .stroke(Theme.mint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    Text("\(Int(left.rounded(.up)))").font(.system(size: 9, weight: .bold, design: .rounded)).monospacedDigit()
+                }
+                .frame(width: 18, height: 18)
+                Text("Press Esc again to cancel")
+            }
+        }
+        .font(.system(size: 12, weight: .medium, design: .rounded))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Capsule().fill(Theme.ink.opacity(0.94)))
+        .overlay(Capsule().strokeBorder(Theme.mint.opacity(0.35), lineWidth: 1))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
@@ -408,7 +558,7 @@ struct LevelBars: View {
         HStack(spacing: 2.5) {
             ForEach(0..<5, id: \.self) { i in
                 let h = 4 + CGFloat(min(1, level * 14)) * CGFloat([8, 14, 18, 12, 7][i])
-                Capsule().fill(Theme.accent).frame(width: 3, height: h)
+                Capsule().fill(Theme.mint).frame(width: 3, height: h)
             }
         }
         .frame(height: 22)
@@ -416,6 +566,9 @@ struct LevelBars: View {
     }
 }
 
+/// Colours taken from the app icon (Assets/AppIcon-1024.png): the green tile, the mint cursor, a deep green ink.
 enum Theme {
-    static let accent = Color(red: 0, green: 0.459, blue: 0.871)   // the one blue; everything else is black, white and grey
+    static let accent = Color(red: 0.13, green: 0.53, blue: 0.37)   // icon tile green, #22875E
+    static let mint = Color(red: 0.49, green: 0.94, blue: 0.71)     // icon cursor, #7CF0B6: accents on dark
+    static let ink = Color(red: 0.04, green: 0.11, blue: 0.08)      // near-black green behind the indicator
 }

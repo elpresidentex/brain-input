@@ -11,6 +11,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else if let dir = DemoVideo.outDir { await DemoVideo.run(to: dir) }
             else { AppState.shared.start(); Telemetry.appOpened() }
         }
+        // Menu-bar app by default, but while a window (setup guide, settings) is open it gets a Dock icon and a
+        // ⌘-Tab entry, so the window can be found again after clicking away. Back to menu-bar-only when it closes.
+        for d in [0.5, 1.5, 3.0] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { [weak self] in self?.syncActivationPolicy() } }
+        let nc = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification,
+                     NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                     NSWindow.didExposeNotification, NSWindow.didChangeOcclusionStateNotification] {
+            nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.async { self?.syncActivationPolicy() }
+            }
+        }
+    }
+
+    /// A real app window, as opposed to the menu-bar popup or panels. (Not matched by title: SwiftUI's
+    /// navigationTitle renames the window to the current section, e.g. "Dictations".)
+    private func isMainWindow(_ w: NSWindow) -> Bool {
+        !(w is NSPanel) && w.canBecomeMain && w.styleMask.contains(.titled)
+    }
+
+    private func syncActivationPolicy() {
+        let open = NSApp.windows.contains { isMainWindow($0) && $0.isVisible || isMainWindow($0) && $0.isMiniaturized }
+        let want: NSApplication.ActivationPolicy = open ? .regular : .accessory
+        guard NSApp.activationPolicy() != want else { return }
+        NSApp.setActivationPolicy(want)
+        if want == .regular {
+            NSApp.windows.first { isMainWindow($0) }?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
     func applicationWillTerminate(_ notification: Notification) {
         // whisper's Metal backend asserts if the context is still alive at exit.
@@ -20,12 +48,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// Opening the window from the menu: become a regular app (Dock icon, ⌘-Tab entry) first, then show the window,
+/// then activate. Doing it in this order is what puts the app next in the ⌘-Tab order instead of last.
+enum MainWindowOpener {
+    static func show(_ openWindow: OpenWindowAction) {
+        NSApp.setActivationPolicy(.regular)
+        openWindow(id: "main")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { NSApp.activate(ignoringOtherApps: true) }
+    }
+}
+
 /// The one-colour "Text Brain" glyph (Assets/MenuBarIcon*.png), drawn as a template so the menu bar tints it.
 enum MenuBarIcon {
     static let image: NSImage? = {
         guard let img = Bundle.main.image(forResource: "MenuBarIcon") else { return nil }
         img.size = NSSize(width: 18, height: 18)
         img.isTemplate = true
+        return img
+    }()
+}
+
+extension MenuBarIcon {
+    /// Brain glyph with a red dot at the top-right while recording. Not a template (the dot must stay red),
+    /// so the glyph is tinted by hand to match the menu bar's current appearance.
+    static let recordingImage: NSImage? = {
+        guard let base = Bundle.main.image(forResource: "MenuBarIcon") else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let img = NSImage(size: size, flipped: false) { rect in
+            let dark = NSAppearance.current.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            (dark ? NSColor.white : NSColor.black).setFill()
+            rect.fill()
+            base.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
+            let d: CGFloat = 7
+            let dot = NSRect(x: rect.maxX - d, y: rect.maxY - d, width: d, height: d)
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        img.isTemplate = false
         return img
     }()
 }
@@ -49,8 +109,8 @@ struct BrainInputApp: App {
         MenuBarExtra {
             MenuContent().environmentObject(state)
         } label: {
-            if state.meetingActive || state.phase == .recording {
-                Image(systemName: state.meetingActive ? "record.circle.fill" : "waveform.circle.fill")
+            if (state.meetingActive || state.phase == .recording), let icon = MenuBarIcon.recordingImage {
+                Image(nsImage: icon)
             } else if let icon = MenuBarIcon.image {
                 Image(nsImage: icon)
             } else {
@@ -65,6 +125,24 @@ struct BrainInputApp: App {
     }
 }
 
+struct MicrophoneMenu: View {
+    @ObservedObject private var mics = MicDevices.shared
+
+    var body: some View {
+        Menu("Microphone: \(mics.activeName)") {
+            Button { mics.select(nil) } label: {
+                Text((mics.selectedUID == nil ? "✓ " : "") + "System Default" + (mics.defaultUID.flatMap { id in mics.devices.first { $0.uid == id }?.name }.map { " (\($0))" } ?? ""))
+            }
+            Divider()
+            ForEach(mics.devices) { d in
+                Button { mics.select(d.uid) } label: { Text((mics.selectedUID == d.uid ? "✓ " : "") + d.name) }
+            }
+            if mics.selectedIsMissing { Divider(); Text("Chosen microphone not connected; using the default") }
+        }
+        .onAppear { mics.refresh() }
+    }
+}
+
 struct MenuContent: View {
     @EnvironmentObject var state: AppState
     @Environment(\.openWindow) private var openWindow
@@ -73,45 +151,54 @@ struct MenuContent: View {
         Text(state.modelReady ? "Ready · hold \(Pref.dictate.display) to dictate" : state.modelStatus)
         Divider()
         Button(state.phase == .recording ? "Stop Dictation" : "Start Dictation") { state.toggleDictation() }
+        MicrophoneMenu()
         Button("Swap Last Dictation for Raw (\(Pref.undo.display))") { state.undoToRaw() }
+        Button("Copy Last Transcription") { state.copyLastTranscription() }.keyboardShortcut("c", modifiers: [.command, .shift])
+        Button("History") { open(.history) }.keyboardShortcut("h", modifiers: [.command, .shift])
         Divider()
         MeetingMenuItems()
+        Button("Transcribe a File…") { open(.transcribe) }
         Divider()
-        Button("Open Brain Input…") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button("Settings…") { open(.settings) }.keyboardShortcut(",")
+        Button("Open Brain Input…") { MainWindowOpener.show(openWindow) }
         Button("Setup Guide…") { OnboardingController.shared.show() }
         Button("Quit") { NSApp.terminate(nil) }.keyboardShortcut("q")
+    }
+
+    private func open(_ section: Section) {
+        state.mainSection = section
+        MainWindowOpener.show(openWindow)
     }
 }
 
 enum Section: String, CaseIterable, Identifiable {
-    case history = "Dictations", meetings = "Meetings", search = "Search", dictionary = "Dictionary", modes = "Modes",
-         style = "Style", settings = "Settings"
+    case history = "Dictations", meetings = "Meetings", transcribe = "Transcribe", search = "Search", dictionary = "Dictionary", modes = "Modes",
+         style = "Style", costs = "Costs", settings = "Settings"
     var id: String { rawValue }
     var icon: String {
         switch self {
-        case .history: "text.bubble"; case .meetings: "person.2.wave.2"; case .search: "magnifyingglass"
-        case .dictionary: "character.book.closed"; case .modes: "square.stack.3d.up"; case .style: "signature"; case .settings: "gearshape"
+        case .history: "text.bubble"; case .meetings: "person.2.wave.2"; case .transcribe: "waveform"; case .search: "magnifyingglass"
+        case .dictionary: "character.book.closed"; case .modes: "square.stack.3d.up"; case .style: "signature"; case .costs: "dollarsign.circle"; case .settings: "gearshape"
         }
     }
 }
 
 struct MainWindow: View {
     @EnvironmentObject var state: AppState
-    @State private var section: Section?
-    init(initial: Section = .history) { _section = State(initialValue: initial) }
-
     var body: some View {
         NavigationSplitView {
-            List(Section.allCases, selection: $section) { s in Label(s.rawValue, systemImage: s.icon).tag(s) }
+            List(Section.allCases, selection: $state.mainSection) { s in Label(s.rawValue, systemImage: s.icon).tag(s) }
                 .navigationSplitViewColumnWidth(min: 170, ideal: 190)
         } detail: {
-            switch section ?? .history {
+            switch state.mainSection ?? .history {
             case .history: HistoryView()
             case .meetings: MeetingsView()
+            case .transcribe: TranscribeView()
             case .search: SearchView()
             case .dictionary: DictionaryView()
             case .modes: ModesView()
             case .style: StyleView()
+            case .costs: CostsView()
             case .settings: SettingsView()
             }
         }

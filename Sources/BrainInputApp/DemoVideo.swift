@@ -13,7 +13,9 @@ enum DemoVideo {
         guard let i = CommandLine.arguments.firstIndex(of: "--demo-video"), i + 1 < CommandLine.arguments.count else { return nil }
         return URL(fileURLWithPath: CommandLine.arguments[i + 1])
     }
-    static let size = NSSize(width: 960, height: 540), fps = 30
+    /// `--portrait`: a 9:16 cut (1080 x 1920 px) for phones; writes demo-mobile.mp4 and still-mobile.png only.
+    static let portrait = CommandLine.arguments.contains("--portrait")
+    static let size = portrait ? NSSize(width: 540, height: 960) : NSSize(width: 960, height: 540), fps = 30
 
     static func run(to dir: URL) async {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -40,13 +42,19 @@ enum DemoVideo {
             if let f = await frame() { frames.append(f) }
         }
         func at(_ t: Double) -> CGImage { frames[min(frames.count - 1, max(0, Int(t * Double(fps))))] }
+        if portrait {
+            writeMP4(frames, to: dir.appendingPathComponent("demo-mobile.mp4"))
+            writePNG(at(DemoTimeline.start(of: .scene(0)) + DemoScene.length - 0.5), to: dir.appendingPathComponent("still-mobile.png"))
+            for (i, sc) in DemoScene.all.enumerated() { writePNG(at(DemoTimeline.start(of: .scene(i)) + DemoScene.length - 0.5), to: dir.appendingPathComponent("still-mobile-\(sc.id).png")) }
+            exit(0)
+        }
         writeMP4(frames, to: dir.appendingPathComponent("demo.mp4"))
         // README / website hero: the email scene only, smaller and at 10 fps.
         let first = DemoTimeline.start(of: .scene(0))
         let hero = stride(from: Int(first * Double(fps)), to: Int((first + DemoScene.length) * Double(fps)), by: 3).map { frames[$0] }
         writeGIF(hero, delay: 0.1, width: 800, to: dir.appendingPathComponent("hero.gif"))
         writePNG(at(first + 3.4), to: dir.appendingPathComponent("still-speaking.png"))
-        writePNG(at(1.9), to: dir.appendingPathComponent("still-intro.png"))
+        writePNG(at(1.5), to: dir.appendingPathComponent("still-intro.png"))
         writePNG(at(DemoTimeline.total - 0.4), to: dir.appendingPathComponent("still-outro.png"))
         for (i, s) in DemoScene.all.enumerated() {
             writePNG(at(DemoTimeline.start(of: .scene(i)) + DemoScene.length - 0.5), to: dir.appendingPathComponent("still-\(s.id).png"))
@@ -183,7 +191,7 @@ struct DemoScene: Identifiable {
 /// Intro, then card + scene per feature, then the outro.
 enum DemoTimeline {
     enum Part: Equatable { case intro, card(Int), scene(Int), outro }
-    static let introLength = 2.6, outroLength = 3.8
+    static let introLength = 2.0, outroLength = 3.8
     static let parts: [(part: Part, start: Double, length: Double)] = {
         var out: [(Part, Double, Double)] = [(.intro, 0, introLength)], t = introLength
         for i in DemoScene.all.indices {
@@ -233,12 +241,9 @@ struct DemoIntro: View {
             if let icon = NSImage(contentsOfFile: "Assets/AppIcon-1024.png") {
                 Image(nsImage: icon).resizable().frame(width: 84, height: 84).opacity(ramp(t, 0.05, 0.4))
             }
-            HStack(spacing: 18) {
-                headline(L("Sprich.", "Talk."), 84).opacity(ramp(t, 0.25, 0.55)).offset(y: 14 * (1 - ease(ramp(t, 0.25, 0.6))))
-                headline(L("Es schreibt.", "It types."), 84).opacity(ramp(t, 0.85, 1.15)).offset(y: 14 * (1 - ease(ramp(t, 0.85, 1.2))))
-            }
             Text(L("Brain Input · Diktieren auf dem Mac, in jeder App", "Brain Input · dictation for Mac, in any app"))
-                .font(.system(size: 22)).foregroundStyle(DemoInk.grey).opacity(ramp(t, 1.3, 1.6))
+                .font(.system(size: DemoVideo.portrait ? 20 : 22)).foregroundStyle(DemoInk.grey).opacity(ramp(t, 0.3, 0.6))
+                .multilineTextAlignment(.center).padding(.horizontal, DemoVideo.portrait ? 40 : 0)
         }
     }
 }
@@ -250,21 +255,21 @@ struct DemoCard: View {
         let rise = ease(ramp(t, 0.05, 0.5))
         ZStack {
             scene.tint
-            HStack(spacing: 40) {
+            (DemoVideo.portrait ? AnyLayout(VStackLayout(spacing: 56)) : AnyLayout(HStackLayout(spacing: 40))) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(scene.number).font(.system(size: 22, weight: .semibold, design: .monospaced)).foregroundStyle(scene.deep)
-                    headline(scene.title, 104)
-                    Text(scene.line).font(.system(size: 27, weight: .medium)).foregroundStyle(DemoInk.ink.opacity(0.72))
+                    headline(scene.title, DemoVideo.portrait ? 84 : 104)
+                    Text(scene.line).font(.system(size: DemoVideo.portrait ? 28 : 27, weight: .medium)).fixedSize(horizontal: false, vertical: true).foregroundStyle(DemoInk.ink.opacity(0.72))
                         .opacity(ramp(t, 0.35, 0.7))
                 }.offset(y: 18 * (1 - rise))
-                Spacer(minLength: 0)
+                if !DemoVideo.portrait { Spacer(minLength: 0) }
                 Image(systemName: scene.symbol).font(.system(size: 78, weight: .regular)).foregroundStyle(DemoInk.ink)
                     .frame(width: 190, height: 190)
                     .background(RoundedRectangle(cornerRadius: 36).fill(.white))
                     .overlay(RoundedRectangle(cornerRadius: 36).strokeBorder(DemoInk.line))
                     .shadow(color: .black.opacity(0.07), radius: 22, y: 10)
                     .rotationEffect(.degrees(4 - 4 * rise)).scaleEffect(0.92 + 0.08 * rise)
-            }.padding(.horizontal, 84)
+            }.padding(.horizontal, DemoVideo.portrait ? 48 : 84).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -273,14 +278,13 @@ struct DemoOutro: View {
     var t: Double
     var body: some View {
         VStack(spacing: 16) {
-            headline(L("Kostenlos. Open Source.", "Free. Open source."), 72).offset(y: 14 * (1 - ease(ramp(t, 0.1, 0.5))))
+            headline(L("Kostenlos. Open Source.", "Free. Open source."), DemoVideo.portrait ? 54 : 72).multilineTextAlignment(.center).offset(y: 14 * (1 - ease(ramp(t, 0.1, 0.5))))
             Text(L("Die Spracherkennung läuft lokal auf deinem Mac.", "Speech recognition runs locally on your Mac."))
-                .font(.system(size: 23)).foregroundStyle(DemoInk.grey).opacity(ramp(t, 0.5, 0.8))
+                .font(.system(size: 23)).foregroundStyle(DemoInk.grey).opacity(ramp(t, 0.5, 0.8)).multilineTextAlignment(.center)
+                .padding(.horizontal, DemoVideo.portrait ? 40 : 0)
             Text("brain-input.vercel.app").font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
                 .padding(.horizontal, 24).padding(.vertical, 12).background(RoundedRectangle(cornerRadius: 12).fill(DemoInk.blue))
                 .padding(.top, 14).opacity(ramp(t, 0.9, 1.2)).scaleEffect(0.96 + 0.04 * ease(ramp(t, 0.9, 1.3)))
-            Text(L("An einem Wochenende in Berlin gebaut, mit Claude Fable. Feedback willkommen.", "Built over a weekend in Berlin with Claude Fable. Feedback welcome."))
-                .font(.system(size: 15)).foregroundStyle(DemoInk.grey).padding(.top, 10).opacity(ramp(t, 1.4, 1.7))
         }
     }
 }
@@ -293,6 +297,7 @@ struct DemoSceneView: View {
 
     var body: some View {
         let typed = ramp(t, Self.typeAt, Self.doneAt)
+        if DemoVideo.portrait { portraitBody(typed) } else {
         VStack(spacing: 0) {
             HStack {
                 Text("\(scene.number) · \(scene.title)").font(.system(size: 14, weight: .semibold)).foregroundStyle(scene.deep)
@@ -318,6 +323,34 @@ struct DemoSceneView: View {
             }.frame(width: 900).padding(.top, 16)
             Spacer(minLength: 0)
         }.frame(width: 900)
+        }
+    }
+
+    /// Phone cut: tag, the spoken words, the app window, then the notes, stacked at 500 pt wide with larger type.
+    private func portraitBody(_ typed: Double) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("\(scene.number) · \(scene.title)").font(.system(size: 17, weight: .semibold)).foregroundStyle(scene.deep)
+                    .padding(.horizontal, 13).padding(.vertical, 7).background(RoundedRectangle(cornerRadius: 9).fill(scene.tint))
+                Spacer()
+                Text("Brain Input").font(.system(size: 17, weight: .semibold)).foregroundStyle(DemoInk.grey)
+            }.padding(.top, 28)
+            spoken.frame(height: scene.kind == .mail ? 290 : 200).padding(.top, 14)
+            Image(systemName: "arrow.down").font(.system(size: 18, weight: .semibold)).foregroundStyle(DemoInk.grey).frame(height: 30)
+            DemoWindow(scene: scene, text: String(scene.clean.prefix(Int(Double(scene.clean.count) * typed))), caret: typed < 1)
+                .frame(height: scene.kind == .mail ? 405 : 420)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(scene.notes.enumerated()), id: \.offset) { i, n in
+                    let a = ramp(t, Self.doneAt + 0.1 + 0.35 * Double(i), Self.doneAt + 0.35 + 0.35 * Double(i))
+                    HStack(spacing: 6) { Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)); Text(n) }
+                        .font(.system(size: 14.5, weight: .medium)).foregroundStyle(scene.deep).lineLimit(1).fixedSize()
+                        .padding(.horizontal, 11).padding(.vertical, 6).background(RoundedRectangle(cornerRadius: 9).fill(scene.tint))
+                        .opacity(a).offset(y: 6 * (1 - ease(a)))
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
+            Spacer(minLength: 0)
+            Text(L("Beispieltext", "Sample text")).font(.system(size: 12)).foregroundStyle(DemoInk.grey.opacity(0.8)).padding(.bottom, 14)
+        }.frame(width: 484)
     }
 
     /// The left pane: every word fades in as it is spoken; clean-up then strikes what it drops.
@@ -338,7 +371,7 @@ struct DemoSceneView: View {
                 Text(L("Du sagst", "You say")).font(.system(size: 14, weight: .semibold)).foregroundStyle(DemoInk.ink)
                 Spacer()
             }
-            text.font(.system(size: 15.5)).lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
+            text.font(.system(size: DemoVideo.portrait ? 18 : 15.5)).lineSpacing(DemoVideo.portrait ? 6 : 5).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
             Spacer(minLength: 0)
             DemoPill(t: t)
         }
@@ -367,8 +400,8 @@ struct DemoPill: View {
             else { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color(red: 0.2, green: 0.6, blue: 0.4)); Text(L("Fertig", "Done")) }
             Spacer(minLength: 0)
         }
-        .font(.system(size: 13, weight: .medium)).foregroundStyle(DemoInk.ink)
-        .padding(.horizontal, 12).frame(height: 38)
+        .font(.system(size: DemoVideo.portrait ? 15 : 13, weight: .medium)).foregroundStyle(DemoInk.ink)
+        .padding(.horizontal, 12).frame(height: DemoVideo.portrait ? 42 : 38)
         .background(RoundedRectangle(cornerRadius: 10).fill(.white))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DemoInk.line))
     }
@@ -411,7 +444,7 @@ struct DemoWindow: View {
 
     private func body(_ size: CGFloat) -> some View {
         (Text(text) + Text(caret ? "▏" : "").foregroundStyle(DemoInk.blue))
-            .font(.system(size: size)).foregroundStyle(fg).lineSpacing(3.5).frame(maxWidth: .infinity, alignment: .leading)
+            .font(.system(size: DemoVideo.portrait ? size + 1.5 : size)).foregroundStyle(fg).lineSpacing(3.5).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var mail: some View {
@@ -432,7 +465,7 @@ struct DemoWindow: View {
                     Text(c).font(.system(size: 13.5, weight: c == "# launch" ? .semibold : .regular)).foregroundStyle(c == "# launch" ? fg : dim)
                 }
                 Spacer()
-            }.padding(16).frame(width: 150, alignment: .leading).background(DemoInk.warm.opacity(0.7))
+            }.padding(16).frame(width: DemoVideo.portrait ? 104 : 150, alignment: .leading).background(DemoInk.warm.opacity(0.7))
             Rectangle().fill(DemoInk.line).frame(width: 1)
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 10) {
@@ -446,17 +479,19 @@ struct DemoWindow: View {
                 Spacer()
                 body(14.5).padding(13).frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
                     .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.black.opacity(0.18)))
-            }.padding(18)
+            }.padding(DemoVideo.portrait ? 14 : 18)
         }
     }
 
     private var code: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(["public actor DictationPipeline {", "    public func processSamples(_ samples: [Float]) async -> DictationRecord? {",
-                               "        let transcript = try await transcriber.transcribe(samples: samples)", "        …", "    }", "}"].enumerated()), id: \.offset) { i, l in
+                ForEach(Array((DemoVideo.portrait
+                    ? ["public actor DictationPipeline {", "  func processSamples(_ s: [Float]) async {", "    let t = try await transcribe(s)", "    …", "  }", "}"]
+                    : ["public actor DictationPipeline {", "    public func processSamples(_ samples: [Float]) async -> DictationRecord? {",
+                       "        let transcript = try await transcriber.transcribe(samples: samples)", "        …", "    }", "}"]).enumerated()), id: \.offset) { i, l in
                     HStack(spacing: 12) { Text("\(i + 27)").foregroundStyle(dim.opacity(0.6)).frame(width: 22, alignment: .trailing); Text(l).foregroundStyle(fg.opacity(0.8)) }
-                        .font(.system(size: 11.5, design: .monospaced)).lineLimit(1)
+                        .font(.system(size: DemoVideo.portrait ? 12.5 : 11.5, design: .monospaced)).lineLimit(1)
                 }
             }.padding(16)
             Spacer(minLength: 0)

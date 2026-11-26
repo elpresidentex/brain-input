@@ -25,9 +25,11 @@ enum Snapshots {
         for dark in [false, true] {
             let suffix = dark ? "-dark" : ""
             for step in 0..<5 {
-                await shot(OnboardingView(close: {}, initialStep: step), size: NSSize(width: 600, height: 560), dark: dark,
+                await shot(OnboardingView(close: {}, initialStep: step), size: NSSize(width: 760, height: 680), dark: dark,
                            to: dir.appendingPathComponent("onboarding-\(step + 1)\(suffix).png"))
             }
+            await shot(OnboardingView(close: {}, initialStep: 2, initialAXChecks: 2), size: NSSize(width: 760, height: 680), dark: dark,
+                       to: dir.appendingPathComponent("onboarding-3-help\(suffix).png"))
             for s in [Section.history, .meetings, .dictionary, .modes, .settings] {
                 await shot(SnapshotMain(section: s), size: NSSize(width: 980, height: 660), dark: dark,
                            to: dir.appendingPathComponent("main-\(s.rawValue.lowercased())\(suffix).png"))
@@ -146,10 +148,12 @@ struct SnapshotMain: View {
                     switch section {
                     case .history: HistoryView()
                     case .meetings: MeetingsView()
+                    case .transcribe: TranscribeView()
                     case .search: SearchView()
                     case .dictionary: DictionaryView()
                     case .modes: ModesView()
                     case .style: StyleView()
+                    case .costs: CostsView()
                     case .settings: SettingsView()
                     }
                 }

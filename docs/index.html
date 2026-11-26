@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Brain Input · Talk. It types.</title>
-<meta name="description" content="Free, open-source dictation for Mac. Hold a key, speak, and clean text lands at your cursor, formatted for the app you are in. Speech recognition runs on your Mac.">
+<meta name="description" content="Free, open-source dictation for Mac, without the $15 a month. Hold a key, speak, and clean text lands at your cursor. Speech recognition runs on your Mac: no word limit, no account, works offline.">
 <meta property="og:title" content="Brain Input · Talk. It types.">
 <meta property="og:description" content="Free, open-source dictation for Mac. Speech recognition runs on your Mac. Built in a weekend with Claude Fable.">
 <meta property="og:image" content="https://brain-input.vercel.app/media/still-email.jpg">
@@ -23,80 +23,68 @@
       <a class="hide" href="#privacy">Privacy</a>
       <a class="hide" href="#faq">Questions</a>
       <a href="https://github.com/elpresidentex/brain-input">GitHub</a>
-      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest" data-track="download_clicked" data-where="nav">Download</a>
+      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest/download/BrainInput-latest.dmg" data-track="download_clicked" data-where="nav">Download</a>
     </nav>
   </header>
 
   <div class="hero">
-    <span class="tag">Free · open source · beta</span>
-    <h1>Talk. It types.</h1>
-    <p class="lead">Hold a key, say it the way you think it, and get it the way you would write it. In any app on your Mac, with speech recognition that never leaves it.</p>
+    <span class="tag">Brain Input · free · open source · beta</span>
+    <h1>Dictation without $15/month</h1>
+    <p class="lead">Writes text like you would write it. In Gmail, WhatsApp, Claude&nbsp;Code. Plus meeting notes without a bot.</p>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest" data-track="download_clicked" data-where="hero">Download for Mac, free</a>
+      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest/download/BrainInput-latest.dmg" data-track="download_clicked" data-where="hero">Download for Mac, free</a>
       <a class="btn ghost" href="https://github.com/elpresidentex/brain-input">View the source</a>
     </div>
-    <p class="req">Apple Silicon · macOS 26 or newer · no account, no subscription</p>
+    <p class="req">Apple Silicon · macOS 26 or newer</p>
     <div class="stage">
-      <video src="media/demo.mp4" poster="media/still-email.jpg" autoplay muted loop playsinline aria-label="Demo in German: a spoken, rambling message becomes a clean email, a chat list and a coding prompt"></video>
+      <video id="demo" poster="media/still-email.jpg" autoplay muted loop playsinline aria-label="Demo in German: a spoken, rambling message becomes a clean email, a chat list and a coding prompt"></video>
+      <script>
+      // Phones get the 9:16 cut, everything else the 16:9 one.
+      (function () {
+        var v = document.getElementById('demo'), m = matchMedia('(max-width:780px)').matches;
+        if (m) v.setAttribute('poster', 'media/still-mobile.jpg');
+        v.src = m ? 'media/demo-mobile.mp4' : 'media/demo.mp4';
+      })();
+      </script>
     </div>
     <p class="note">Demo with sample text, dictated in German. English works the same way.</p>
   </div>
 </div>
 
 <section id="features">
-  <div class="wrap">
+  <div class="wrap wide">
     <h2>One key. It reads the room.</h2>
     <p class="sub">The same voice comes out differently depending on where your cursor is.</p>
     <div class="shots">
-      <figure class="c-yellow"><span class="n">01</span><img src="media/still-email.jpg" alt="A rambling spoken message next to the clean email it became" loading="lazy"><figcaption><b>Email</b>Paragraphs, greeting and sign-off. Filler words and "no wait, I mean" are gone.</figcaption></figure>
-      <figure class="c-blue"><span class="n">02</span><img src="media/still-chat.jpg" alt="A spoken list turned into a numbered chat message" loading="lazy"><figcaption><b>Chat</b>Short and casual. Say a list and it becomes a list.</figcaption></figure>
-      <figure class="c-green"><span class="n">03</span><img src="media/still-code.jpg" alt="A dictated prompt with file names spelled as on screen" loading="lazy"><figcaption><b>Code</b>A prompt for your coding agent, with file and function names spelled as they are on screen.</figcaption></figure>
+      <figure class="c-yellow"><span class="n">01</span><figcaption><b>Email</b><span>Paragraphs, greeting and sign-off. Filler words and "no wait, I mean" are gone.</span></figcaption><button class="zoom" type="button" data-full="media/still-email.jpg" aria-label="Enlarge: A rambling spoken message next to the clean email it became"><img src="media/still-email.jpg" alt="A rambling spoken message next to the clean email it became" loading="lazy"><i>Tap to enlarge</i></button></figure>
+      <figure class="c-blue"><span class="n">02</span><figcaption><b>Chat</b><span>Short and casual. Say a list and it becomes a list.</span></figcaption><button class="zoom" type="button" data-full="media/still-chat.jpg" aria-label="Enlarge: A spoken list turned into a numbered chat message"><img src="media/still-chat.jpg" alt="A spoken list turned into a numbered chat message" loading="lazy"><i>Tap to enlarge</i></button></figure>
+      <figure class="c-green"><span class="n">03</span><figcaption><b>Code</b><span>A prompt for your coding agent, with file and function names spelled as they are on screen.</span></figcaption><button class="zoom" type="button" data-full="media/still-code.jpg" aria-label="Enlarge: A dictated prompt with file names spelled as on screen"><img src="media/still-code.jpg" alt="A dictated prompt with file names spelled as on screen" loading="lazy"><i>Tap to enlarge</i></button></figure>
     </div>
   </div>
 </section>
 
-<section class="band">
-  <div class="wrap">
-    <h2>What is in the box</h2>
-    <p class="sub">Small app, short list.</p>
-    <div class="grid">
-      <div class="card wide"><span class="k">Dictation</span><h3>Works where you type</h3><p>Mail, Slack, WhatsApp, Notes, your browser, your editor. Hold to talk or tap to start and stop. Esc cancels.</p></div>
-      <div class="card c-green"><span class="k">Local</span><h3>Your voice stays home</h3><p>Speech recognition runs on your Mac with Parakeet or Whisper. It works offline. Audio is never stored or uploaded.</p></div>
-      <div class="card c-blue"><span class="k">Clean-up</span><h3>Optional, with your own key</h3><p>Add a Claude API key and the transcript is tidied and formatted. Skip it and you get exactly what you said.</p></div>
-      <div class="card"><span class="k">Learning</span><h3>It learns your words</h3><p>Fix a misheard name twice and it lands in your dictionary. Style notes per app keep the text sounding like you.</p></div>
-      <div class="card c-pink"><span class="k">Meetings</span><h3>Notes without a bot</h3><p>Records both sides of a call on your Mac and writes a Me / Them transcript with summary, decisions and action items.</p></div>
-      <div class="card wide c-yellow"><span class="k">Yours</span><h3>Plain files, open to agents</h3><p>Everything is Markdown in a folder. A small CLI and an MCP server let Claude or Cursor pull up your last meeting.</p></div>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="wrap split">
-    <div>
-      <h2>Two minutes from download to first sentence</h2>
-      <ol class="steps">
-        <li><b>Download a speech model.</b> One click in the setup guide, about 460 MB.</li>
-        <li><b>Allow microphone and accessibility.</b> The guide explains what each is for.</li>
-        <li><b>Add a Claude key, or don't.</b> It is optional and you can do it later.</li>
-        <li><b>Hold the key and talk.</b></li>
-      </ol>
-    </div>
-    <img src="media/onboarding-2.png" alt="Setup guide: choose and download a speech model" loading="lazy">
-  </div>
-</section>
-
-<section class="band" id="privacy">
-  <div class="wrap split">
-    <img src="media/main-meetings.png" alt="A meeting note with summary, decisions, action items and a Me / Them transcript" loading="lazy">
-    <div>
-      <h2>Private by design, honest about cost</h2>
+<section class="band" id="switch">
+  <div class="wrap duo">
+    <div class="card">
+      <span class="k">Switching</span>
+      <h3>Leaving a paid app?</h3>
+      <p>Brain Input replaces Wispr Flow for dictation, Granola for meeting notes and MacWhisper for audio files.</p>
       <ul class="plain">
-        <li><b>No account, no profile, no cookies.</b> The app sends one anonymous "opened" count when it starts, with nothing but its version. One switch in Settings turns that off.</li>
-        <li><b>Audio never leaves your Mac.</b> Meeting audio is not even written to disk.</li>
-        <li><b>Clean-up is your call.</b> With your own key, only text goes to Anthropic, on your account. A dictation costs a fraction of a cent and the app shows your total.</li>
-        <li><b>Tell people before you record a call.</b> The app reminds you every time.</li>
+        <li><b>Free.</b> No subscription. Clean-up on your own key cost me 2.4 cents in 9 days.</li>
+        <li><b>No word limit.</b> Speech recognition runs on your Mac.</li>
+        <li><b>Your voice stays home.</b> Audio is never uploaded or stored, and the code is open so you can check.</li>
+        <li><b>Works offline.</b> No network, and you still get exactly what you said.</li>
+        <li><b>No account.</b> Download, allow the microphone, talk.</li>
       </ul>
-      <p style="margin-top:18px"><a href="privacy.html">Read the full privacy page</a></p>
+    </div>
+    <div class="card">
+      <span class="k">New to this</span>
+      <h3>Never dictated before?</h3>
+      <ul class="plain">
+        <li>Now you can answer a long email in the time it takes to say it, without fixing commas afterwards.</li>
+        <li>Now you can brief your coding agent out loud, with file and function names spelled the way they are on screen.</li>
+        <li>Now you can get notes from a call without a bot joining it.</li>
+      </ul>
     </div>
   </div>
 </section>
@@ -111,12 +99,59 @@
   </div>
 </section>
 
+<section class="band">
+  <div class="wrap">
+    <h2>What is in the box</h2>
+    <p class="sub">Small app, short list.</p>
+    <div class="grid">
+      <div class="card wide"><span class="k">Dictation</span><h3>Works where you type</h3><p>Mail, Slack, WhatsApp, Notes, your browser, your editor. Hold to talk or tap to start and stop. Esc cancels.</p></div>
+      <div class="card c-green"><span class="k">Local</span><h3>Your voice stays home</h3><p>Speech recognition runs on your Mac with Parakeet or Whisper. It works offline. Audio is never stored or uploaded.</p></div>
+      <div class="card c-blue"><span class="k">Clean-up</span><h3>Optional, with your own key</h3><p>Add a Claude API key and the transcript is tidied and formatted. Skip the key and it still works, free, with exactly what you said.</p></div>
+      <div class="card"><span class="k">Learning</span><h3>It learns your words</h3><p>Fix a misheard name twice and it lands in your dictionary. Style notes per app keep the text sounding like you.</p></div>
+      <div class="card c-pink"><span class="k">Meetings</span><h3>Notes without a bot</h3><p>Records both sides of a call on your Mac and writes a Me / Them transcript with summary, decisions and action items.</p></div>
+      <div class="card wide c-yellow"><span class="k">MCP</span><h3>Your notes, inside Claude and Cursor</h3><p>A built-in MCP server lets Claude or Cursor search your dictations and meetings and pull up your last call. Everything is plain Markdown in a folder you own, with a small CLI on top.</p></div>
+      <div class="card"><span class="k">Files</span><h3>Transcribe any recording</h3><p>Drop an audio or video file (m4a, mp3, mov and more) and get a transcript, on your Mac.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap wide split">
+    <div>
+      <h2>From download to first sentence</h2>
+      <ol class="steps">
+        <li><b>Download a speech model.</b> One click in the setup guide, about 460 MB.</li>
+        <li><b>Allow microphone and accessibility.</b> The guide explains what each is for.</li>
+        <li><b>Add a Claude key, or don't.</b> It is optional and you can do it later.</li>
+        <li><b>Hold the key and talk.</b></li>
+      </ol>
+    </div>
+    <img src="media/onboarding-2.png" alt="Setup guide: choose and download a speech model" loading="lazy">
+  </div>
+</section>
+
+<section class="band" id="privacy">
+  <div class="wrap wide split flip">
+    <img src="media/main-meetings.png" alt="A meeting note with summary, decisions, action items and a Me / Them transcript" loading="lazy">
+    <div>
+      <h2>Private by design, honest about cost</h2>
+      <ul class="plain">
+        <li><b>No account, no profile, no cookies.</b> The app sends one anonymous "opened" count when it starts, with nothing but its version. One switch in Settings turns that off.</li>
+        <li><b>Audio never leaves your Mac.</b> Meeting audio is not even written to disk.</li>
+        <li><b>Clean-up is your call.</b> With your own key, only text goes to Anthropic, on your account. A dictation costs about 0.04 cents (my first 114 came to 2.4 cents), and the app shows your total.</li>
+        <li><b>Tell people before you record a call.</b> The app reminds you every time.</li>
+      </ul>
+      <p style="margin-top:18px"><a href="privacy.html">Read the full privacy page</a></p>
+    </div>
+  </div>
+</section>
+
 <section class="final">
   <div class="wrap">
     <h2>Free. Open source. Try it.</h2>
     <p class="sub">It is a beta, so things will break. Feedback is the whole point.</p>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest" data-track="download_clicked" data-where="footer">Download for Mac, free</a>
+      <a class="btn primary" href="https://github.com/elpresidentex/brain-input/releases/latest/download/BrainInput-latest.dmg" data-track="download_clicked" data-where="footer">Download for Mac, free</a>
       <a class="btn ghost" href="https://github.com/elpresidentex/brain-input/issues" data-track="feedback_clicked" data-where="footer">Give feedback</a>
     </div>
   </div>
@@ -139,5 +174,33 @@
     <span><a href="https://github.com/elpresidentex/brain-input">GitHub</a> · <a href="privacy.html">Privacy</a> · <a href="imprint.html">Imprint</a></span>
   </div>
 </footer>
+<dialog id="lb" aria-label="Enlarged image"><button type="button" class="x" aria-label="Close">&times;</button><div class="pan"><img alt=""></div></dialog>
+<script>
+(function () {
+  var d = document.getElementById('lb'), img = d.querySelector('img');
+  document.querySelectorAll('button.zoom').forEach(function (b) {
+    b.setAttribute('aria-expanded', 'false');
+    b.addEventListener('click', function () {
+      // Phones: full screen. Desktop: the card widens in its row and the other two stay visible.
+      if (matchMedia('(max-width:780px)').matches) { img.src = b.dataset.full; img.alt = b.querySelector('img').alt; d.showModal(); d.querySelector('.pan').scrollTo(0, 0); return; }
+      var all = Array.prototype.slice.call(document.querySelectorAll('button.zoom')), i = all.indexOf(b), open = b.getAttribute('aria-expanded') !== 'true';
+      var row = b.closest('.shots');
+      if (open) row.setAttribute('data-open', i + 1); else row.removeAttribute('data-open');
+      all.forEach(function (o) { o.setAttribute('aria-expanded', String(open && o === b)); });
+    });
+  });
+  d.addEventListener('click', function (e) { if (e.target !== img) d.close(); });
+})();
+</script>
+<script>
+// The menu bar stays out of the way until the hero's buttons scroll off screen, so the demo gets the space.
+(function () {
+  var nav = document.querySelector('header.nav'), cta = document.querySelector('.hero .cta');
+  if (!nav || !cta || !('IntersectionObserver' in window)) { if (nav) nav.classList.add('show'); return; }
+  new IntersectionObserver(function (e) {
+    nav.classList.toggle('show', !e[0].isIntersecting && e[0].boundingClientRect.top < 0);
+  }).observe(cta);
+})();
+</script>
 </body>
 </html>

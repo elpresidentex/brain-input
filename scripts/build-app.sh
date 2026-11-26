@@ -3,6 +3,17 @@
 # with a stable identity so macOS keeps granted permissions across rebuilds.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Refuse to build a checkout that is behind local master: such a build silently drops fixes (0.1.1 was built that way
+# and lost the top-right meeting counter). ALLOW_STALE=1 builds it anyway. Skipped where there is no master branch.
+if [ "${ALLOW_STALE:-0}" != 1 ] && git rev-parse -q --verify refs/heads/master >/dev/null 2>&1 \
+   && ! git merge-base --is-ancestor refs/heads/master HEAD; then
+  echo "not building: this checkout lacks $(git rev-list --count HEAD..refs/heads/master) commit(s) on master, for example:" >&2
+  git log -5 --format='  %h %s' HEAD..refs/heads/master >&2
+  echo "merge master first, or run again with ALLOW_STALE=1" >&2
+  exit 1
+fi
+# Link VoiceInk's prebuilt whisper.xcframework if this Mac has it; otherwise build it from whisper.cpp.
+[ -e Vendor/whisper.xcframework ] || scripts/setup-vendor.sh --quiet
 [ -e Vendor/whisper.xcframework ] || scripts/fetch-whisper.sh
 VERSION="${VERSION:-0.1.0}"
 swift build -c release 2>&1 | tail -3
@@ -27,7 +38,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
-  <key>LSUIElement</key><true/>
+  <key>LSUIElement</key><false/>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>Free software under GPL-3.0. No warranty.</string>
   <key>NSMicrophoneUsageDescription</key><string>Brain Input listens only while you hold the dictation key or record a meeting you started.</string>

@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import BrainCore
 import BrainWhisper
+import AudioToolbox
 import Carbon.HIToolbox
 
 // MARK: - Log
@@ -93,7 +94,7 @@ enum Pref {
     static func registerDefaults() {
         d.register(defaults: [
             "dictateKey": kVK_Space, "dictateMods": controlKey | optionKey,
-            "undoKey": kVK_ANSI_Z, "undoMods": controlKey | optionKey,
+            "undoKey": kVK_ANSI_R, "undoMods": controlKey | optionKey,   // ⌃⌥R: R for raw
             "hotkeyMode": "hybrid", "whisperModel": ModelLocator.preferredModel,
             "cleanupEnabled": true, "claudeModel": "claude-haiku-5-5", "cleanupTimeout": 3.0,
             "autoLearn": true, "offerMeetings": true,
@@ -263,6 +264,11 @@ final class MicRecorder: @unchecked Sendable {
     private func buildEngine() throws {
         let engine = AVAudioEngine()
         let input = engine.inputNode
+        // Record from the microphone picked in the menu bar; without a pick (or if it is unplugged) the system default applies.
+        if var dev = MicDevices.selectedDeviceID, let au = input.audioUnit {
+            let err = AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &dev, UInt32(MemoryLayout<AudioDeviceID>.size))
+            if err != noErr { Log.write("could not select microphone (\(err)); using system default") }
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw NSError(domain: "BrainInput", code: 1, userInfo: [NSLocalizedDescriptionKey: "No microphone input available"])
@@ -293,6 +299,11 @@ final class MicRecorder: @unchecked Sendable {
     /// The audio recorded so far, without stopping.
     func snapshot() -> [Float] { lock.withLock { samples } }
 
+    /// Samples recorded after the first `offset`, without copying the rest; the live transcriber's feed.
+    func samples(since offset: Int) -> [Float] {
+        lock.withLock { offset < samples.count ? Array(samples[max(0, offset)...]) : [] }
+    }
+
     @discardableResult
     func stop() -> [Float] {
         let out: [Float] = lock.withLock { recording = false; preRoll = []; let s = samples; samples = []; return s }
@@ -302,6 +313,12 @@ final class MicRecorder: @unchecked Sendable {
             DispatchQueue.main.asyncAfter(deadline: .now() + warmSeconds, execute: work)
         } else { teardown() }
         return out
+    }
+
+    /// Drops a warm engine so the next start() picks up a changed microphone. A recording in progress is left alone.
+    func resetDevice() {
+        guard !lock.withLock({ recording }) else { return }
+        cancelCooldown(); teardown()
     }
 
     private func cancelCooldown() { lock.withLock { cooldown?.cancel(); cooldown = nil } }

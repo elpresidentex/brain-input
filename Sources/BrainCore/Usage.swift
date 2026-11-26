@@ -44,7 +44,10 @@ public struct Completion: Sendable {
     public var text: String
     public var usage: TokenUsage?
     public var costUSD: Double?
-    public init(text: String, usage: TokenUsage? = nil, costUSD: Double? = nil) { self.text = text; self.usage = usage; self.costUSD = costUSD }
+    public var net: NetTiming?
+    public init(text: String, usage: TokenUsage? = nil, costUSD: Double? = nil, net: NetTiming? = nil) {
+        self.text = text; self.usage = usage; self.costUSD = costUSD; self.net = net
+    }
 }
 
 public struct UsageEntry: Codable, Sendable {

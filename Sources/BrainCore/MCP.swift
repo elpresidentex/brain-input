@@ -7,9 +7,9 @@ public final class MCPServer {
     public init(store: NotesStore) { self.store = store }
 
     static let tools: [[String: Any]] = [
-        tool("search_notes", "Full-text search over meeting notes and dictation history. Returns refs to pass to read_note.",
+        tool("search_notes", "Full-text search over meeting notes, dictation history and transcripts of audio files. Returns refs to pass to read_note.",
              ["query": ["type": "string", "description": "Words to look for"],
-              "kind": ["type": "string", "enum": ["meeting", "dictation"], "description": "Limit to one kind"],
+              "kind": ["type": "string", "enum": ["meeting", "dictation", "transcript"], "description": "Limit to one kind"],
               "limit": ["type": "integer", "description": "Maximum results (default 10)"]], required: ["query"]),
         tool("read_note", "Read one note in full by its ref, e.g. Meetings/2026-11-16-1400-launch-sync.md.",
              ["ref": ["type": "string", "description": "A ref returned by search_notes or list_meetings"]], required: ["ref"]),
@@ -34,7 +34,7 @@ public final class MCPServer {
         case "initialize":
             return reply(["protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18", "capabilities": ["tools": [String: Any]()],
                           "serverInfo": ["name": "brain-input", "version": "0.1.0"],
-                          "instructions": "Notes from Brain Input: meeting notes (with Me/Them transcripts) and dictation history. Read-only."])
+                          "instructions": "Notes from Brain Input: meeting notes (with Me/Them transcripts), dictation history and transcripts of audio files. Read-only."])
         case "ping": return reply([:])
         case "tools/list": return reply(["tools": Self.tools])
         case "tools/call":

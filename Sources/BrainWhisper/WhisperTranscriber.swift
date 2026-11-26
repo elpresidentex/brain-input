@@ -29,12 +29,25 @@ public actor WhisperTranscriber: Transcriber {
     public func unload() { if let ctx { whisper_free(ctx) }; ctx = nil }
 
     public func transcribe(samples: [Float], prompt: String?) async throws -> Transcript {
+        try run(samples: samples, prompt: prompt, language: nil)
+    }
+
+    public func transcribe(samples: [Float], prompt: String?, language: String?) async throws -> Transcript {
+        try run(samples: samples, prompt: prompt, language: language)
+    }
+
+    private func run(samples: [Float], prompt: String?, language fixed: String?) throws -> Transcript {
+        var stats = TranscribeStats(); stats.engine = "whisper"; stats.startedAt = Date()
+        let wasLoaded = ctx != nil, tLoad = Date()
         try load()
+        if !wasLoaded { stats.loadMs = msSince(tLoad) }
         guard let ctx else { throw WhisperError.runFailed }
         // Whisper invents text for silence, so skip input with no speech-level energy.
-        guard AudioMath.rms(samples) > 0.0015 else { return Transcript(text: "", language: nil) }
+        guard AudioMath.rms(samples) > 0.0015 else { stats.silenceGated = true; return Transcript(text: "", language: nil, stats: stats) }
         var audio = samples
         if audio.count < 17_600 { audio += [Float](repeating: 0, count: 17_600 - audio.count) }
+        stats.samples = audio.count
+        let tRun = Date()
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.print_realtime = false; params.print_progress = false
@@ -46,7 +59,7 @@ public actor WhisperTranscriber: Transcriber {
         params.temperature = 0
         params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
 
-        let lang = Array("auto".utf8CString)
+        let lang = Array((fixed ?? "auto").utf8CString)
         let promptC = prompt.map { Array($0.utf8CString) }
         let rc: Int32 = lang.withUnsafeBufferPointer { l in
             params.language = l.baseAddress
@@ -57,11 +70,12 @@ public actor WhisperTranscriber: Transcriber {
             return run()
         }
         guard rc == 0 else { throw WhisperError.runFailed }
+        stats.inferenceMs = msSince(tRun)
         var text = ""
         for i in 0..<whisper_full_n_segments(ctx) { text += String(cString: whisper_full_get_segment_text(ctx, i)) }
         let id = whisper_full_lang_id(ctx)
         let language = id >= 0 ? whisper_lang_str(id).map { String(cString: $0) } : nil
-        return Transcript(text: text.trimmingCharacters(in: .whitespacesAndNewlines), language: language)
+        return Transcript(text: text.trimmingCharacters(in: .whitespacesAndNewlines), language: language, stats: stats)
     }
 }
 
@@ -77,13 +91,54 @@ public enum AudioMath {
 public enum AudioLoader {
     public static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
 
-    /// Loads any audio file as 16 kHz mono Float32.
+    /// Loads an audio file AVAudioFile can open (wav, m4a, mp3, aiff, caf, flac) as 16 kHz mono Float32. Reads in
+    /// blocks, so an hour of 48 kHz stereo does not need a 1.4 GB buffer first.
     public static func load16kMono(_ url: URL) throws -> [Float] {
         let file = try AVAudioFile(forReading: url)
-        guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else { return [] }
-        try file.read(into: buf)
+        let block: AVAudioFrameCount = 1 << 18
+        guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: block) else { return [] }
         let r = StreamResampler()
-        return r.convert(buf)
+        var out: [Float] = []
+        out.reserveCapacity(Int(Double(file.length) * 16000 / file.processingFormat.sampleRate) + 1024)
+        while file.framePosition < file.length {
+            try file.read(into: buf, frameCount: block)
+            if buf.frameLength == 0 { break }
+            out += r.convert(buf)
+        }
+        return out
+    }
+
+    public enum LoadError: Error, LocalizedError {
+        case noAudio(String)
+        public var errorDescription: String? {
+            switch self { case .noAudio(let name): "\(name) has no audio track that macOS can decode" }
+        }
+    }
+
+    /// Loads any file with sound in it: audio files first through AVAudioFile, then anything AVFoundation can open
+    /// (video such as mp4 and mov, other containers) through AVAssetReader, which decodes and resamples itself.
+    public static func loadAny16kMono(_ url: URL) async throws -> [Float] {
+        if let samples = try? load16kMono(url), !samples.isEmpty { return samples }
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { throw LoadError.noAudio(url.lastPathComponent) }
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+        ])
+        reader.add(output)
+        guard reader.startReading() else { throw reader.error ?? LoadError.noAudio(url.lastPathComponent) }
+        var out: [Float] = []
+        while let sample = output.copyNextSampleBuffer() {
+            guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
+            let n = CMBlockBufferGetDataLength(block) / MemoryLayout<Float>.size
+            var chunk = [Float](repeating: 0, count: n)
+            _ = chunk.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!) }
+            out += chunk
+        }
+        if reader.status == .failed { throw reader.error ?? LoadError.noAudio(url.lastPathComponent) }
+        guard !out.isEmpty else { throw LoadError.noAudio(url.lastPathComponent) }
+        return out
     }
 }
 

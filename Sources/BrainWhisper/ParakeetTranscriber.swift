@@ -76,14 +76,36 @@ public actor ParakeetTranscriber: LocalSpeechModel {
 
     public func unload() async { await manager?.cleanup(); manager = nil }
 
+    // The actor is reentrant: at every `await` on FluidAudio's own actor another call may start. Without this gate a
+    // second call (live preview, meeting chunk) stamped `startedAt` at once and its wait for the engine was booked as
+    // inference, so the queue wait always read about 0. The gate also keeps calls in arrival order and stops two
+    // concurrent first calls from loading the model twice.
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private func acquire() async {
+        if !busy { busy = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    private func release() { if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() } }
+
     public func transcribe(samples: [Float], prompt: String?) async throws -> Transcript {
+        await acquire()
+        defer { release() }
+        var stats = TranscribeStats(); stats.engine = "parakeet"; stats.startedAt = Date()
+        let wasLoaded = manager != nil
+        let tLoad = Date()
         try await load()
-        guard let manager else { return Transcript(text: "") }
-        guard AudioMath.rms(samples) > 0.0015 else { return Transcript(text: "") }
+        if !wasLoaded { stats.loadMs = msSince(tLoad) }
+        guard let manager else { return Transcript(text: "", stats: stats) }
+        guard AudioMath.rms(samples) > 0.0015 else { stats.silenceGated = true; return Transcript(text: "", stats: stats) }
         var audio = samples
         if audio.count < 16_000 { audio += [Float](repeating: 0, count: 16_000 - audio.count) }   // the model wants at least 1 s
+        stats.samples = audio.count
+        let tRun = Date()
         var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
         let result = try await manager.transcribe(audio, decoderState: &state, language: nil)
-        return Transcript(text: result.text.trimmingCharacters(in: .whitespacesAndNewlines), language: nil)
+        stats.inferenceMs = msSince(tRun)
+        let tokens = result.tokenTimings?.map { TimedToken(text: $0.token, start: $0.startTime, end: $0.endTime) }
+        return Transcript(text: result.text.trimmingCharacters(in: .whitespacesAndNewlines), language: nil, stats: stats, tokens: tokens)
     }
 }

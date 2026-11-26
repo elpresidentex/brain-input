@@ -12,8 +12,6 @@ struct SettingsView: View {
     @AppStorage("cleanupTimeout") private var cleanupTimeout = 3.0
     @AppStorage("autoLearn") private var autoLearn = true
     @AppStorage("offerMeetings") private var offerMeetings = true
-    @AppStorage("showCostAfterDictation") private var showCost = false
-    @State private var usage: [UsageEntry] = UsageLedger.shared.entries()
     @State private var apiKey = ""
     @State private var keyNote = ""
     @State private var launchAtLogin = LoginItem.enabled
@@ -76,14 +74,6 @@ struct SettingsView: View {
                 Text("Only the transcript, app name, window title, your style card and dictionary are sent. Audio never leaves this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            SwiftUI.Section("API usage and cost") {
-                UsageRow(title: "Today", s: UsageLedger.summarize(usage, since: Calendar.current.startOfDay(for: Date())))
-                UsageRow(title: "Last 30 days", s: UsageLedger.summarize(usage, since: Date().addingTimeInterval(-30 * 86400)))
-                UsageRow(title: "All time", s: UsageLedger.summarize(usage))
-                Toggle("Show the cost after each dictation", isOn: $showCost)
-                Text("Computed from the token counts the API returns, at the published rates, for calls this app made (clean-up, style cards, meeting summaries). A call that timed out or was cancelled mid-flight may still be billed but is not counted; check the Anthropic Console for the authoritative total. Batch eval runs from the command line are not included.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
             SwiftUI.Section("Learning") {
                 Toggle("Learn vocabulary and tone from my edits", isOn: $autoLearn)
             }
@@ -122,7 +112,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .navigationTitle("Settings")
         .onAppear { keyStored = Keychain.apiKey() != nil }
-        .task { while !Task.isCancelled { axTrusted = ClipboardPaster.trusted; mic = MicRecorder.permission; usage = UsageLedger.shared.entries(); try? await Task.sleep(for: .seconds(2)) } }
+        .task { while !Task.isCancelled { axTrusted = ClipboardPaster.trusted; mic = MicRecorder.permission; try? await Task.sleep(for: .seconds(2)) } }
     }
 }
 
@@ -143,6 +133,26 @@ struct UsageRow: View {
                 if s.unpricedCalls > 0 { Text("\(s.unpricedCalls) calls on an unpriced model are not in the total").font(.caption).foregroundStyle(.orange) }
             }
         }
+    }
+}
+
+struct CostsView: View {
+    @AppStorage("showCostAfterDictation") private var showCost = false
+    @State private var usage: [UsageEntry] = UsageLedger.shared.entries()
+    var body: some View {
+        Form {
+            SwiftUI.Section("AI transcription and clean-up") {
+                UsageRow(title: "Today", s: UsageLedger.summarize(usage, since: Calendar.current.startOfDay(for: Date())))
+                UsageRow(title: "Last 30 days", s: UsageLedger.summarize(usage, since: Date().addingTimeInterval(-30 * 86400)))
+                UsageRow(title: "All time", s: UsageLedger.summarize(usage))
+                Toggle("Show the cost after each dictation", isOn: $showCost)
+                Text("Computed from the token counts the API returns, at the published rates, for calls this app made (clean-up, style cards, meeting summaries). A call that timed out or was cancelled mid-flight may still be billed but is not counted; check the Anthropic Console for the authoritative total. Batch eval runs from the command line are not included.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Costs")
+        .task { while !Task.isCancelled { usage = UsageLedger.shared.entries(); try? await Task.sleep(for: .seconds(2)) } }
     }
 }
 

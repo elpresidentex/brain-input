@@ -5,12 +5,35 @@ import Foundation
 public struct Transcript: Sendable, Equatable {
     public var text: String
     public var language: String?
-    public init(text: String, language: String? = nil) { self.text = text; self.language = language }
+    /// Timing from inside the engine; nil for engines that do not report it.
+    public var stats: TranscribeStats?
+    /// Word pieces with their times in seconds from the start of the samples, for engines that report them
+    /// (Parakeet). Joined in order they give `text`, up to surrounding whitespace.
+    public var tokens: [TimedToken]?
+    public init(text: String, language: String? = nil, stats: TranscribeStats? = nil, tokens: [TimedToken]? = nil) {
+        self.text = text; self.language = language; self.stats = stats; self.tokens = tokens
+    }
+}
+
+public struct TimedToken: Sendable, Equatable {
+    public var text: String
+    public var start: Double
+    public var end: Double
+    public init(text: String, start: Double, end: Double) { self.text = text; self.start = start; self.end = end }
 }
 
 /// Speech to text. Samples are 16 kHz mono Float32.
 public protocol Transcriber: Sendable {
     func transcribe(samples: [Float], prompt: String?) async throws -> Transcript
+    /// Same, with the language fixed (ISO code such as "de"); engines without language selection ignore it.
+    /// Used for the second and later chunks of a dictation, so a short chunk cannot flip to another language.
+    func transcribe(samples: [Float], prompt: String?, language: String?) async throws -> Transcript
+}
+
+extension Transcriber {
+    public func transcribe(samples: [Float], prompt: String?, language: String?) async throws -> Transcript {
+        try await transcribe(samples: samples, prompt: prompt)
+    }
 }
 
 public struct AppContext: Sendable, Codable, Equatable {
@@ -58,8 +81,9 @@ public struct PolishResult: Sendable {
     public var status: String     // ok | no-key | timeout | error: … | disabled
     public var ms: Int
     public var costUSD: Double?
-    public init(text: String?, modeID: String, status: String, ms: Int, costUSD: Double? = nil) {
-        self.text = text; self.modeID = modeID; self.status = status; self.ms = ms; self.costUSD = costUSD
+    public var detail: CleanupDetail?
+    public init(text: String?, modeID: String, status: String, ms: Int, costUSD: Double? = nil, detail: CleanupDetail? = nil) {
+        self.text = text; self.modeID = modeID; self.status = status; self.ms = ms; self.costUSD = costUSD; self.detail = detail
     }
 }
 
@@ -71,6 +95,8 @@ public protocol Polisher: Sendable {
 
 public struct Timings: Sendable, Codable, Equatable {
     public var audioMs = 0, transcribeMs = 0, cleanupMs = 0, insertMs = 0, totalMs = 0
+    /// Fine-grained breakdown; nil for dictations recorded before it existed.
+    public var detail: TimingDetail?
     public init() {}
 }
 

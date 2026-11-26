@@ -2,6 +2,25 @@ import Foundation
 
 public struct ClaudeError: Error, CustomStringConvertible { public let description: String }
 
+/// Collects the transport timing of one request.
+final class MetricsCollector: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: NetTiming?
+    var timing: NetTiming? { lock.withLock { value } }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard let m = metrics.transactionMetrics.last else { return }
+        func ms(_ a: Date?, _ b: Date?) -> Int { a.flatMap { a in b.map { Int($0.timeIntervalSince(a) * 1000) } } ?? 0 }
+        var t = NetTiming()
+        t.reusedConnection = m.isReusedConnection
+        t.connectMs = m.isReusedConnection ? 0 : ms(m.domainLookupStartDate ?? m.connectStartDate, m.secureConnectionEndDate ?? m.connectEndDate)
+        t.ttfbMs = ms(m.requestEndDate, m.responseStartDate)
+        t.downloadMs = ms(m.responseStartDate, m.responseEndDate)
+        t.proto = m.networkProtocolName ?? ""
+        lock.withLock { value = t }
+    }
+}
+
 /// Claude Messages API over URLSession (there is no official Swift SDK). Only text is ever sent.
 public struct ClaudeModel: LanguageModel {
     public var apiKey: String
@@ -41,12 +60,16 @@ public struct ClaudeModel: LanguageModel {
         return r
     }
 
-    func send(_ r: URLRequest) async throws -> Data {
-        let (data, resp) = try await URLSession.shared.data(for: r)
+    func send(_ r: URLRequest) async throws -> Data { try await sendTimed(r).0 }
+
+    /// Same, plus connection / first-byte / download timing from URLSessionTaskMetrics.
+    func sendTimed(_ r: URLRequest) async throws -> (Data, NetTiming?) {
+        let collector = MetricsCollector()
+        let (data, resp) = try await URLSession.shared.data(for: r, delegate: collector)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             throw ClaudeError(description: "HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0): \(String(data: data.prefix(300), encoding: .utf8) ?? "")")
         }
-        return data
+        return (data, collector.timing)
     }
 
     public enum KeyCheck: Sendable { case valid, invalid, unknown }
@@ -78,12 +101,12 @@ public struct ClaudeModel: LanguageModel {
     }
 
     public func completeDetailed(system: String, user: String, maxTokens: Int) async throws -> Completion {
-        let data = try await send(try request("messages", json: body(system: system, user: user, maxTokens: maxTokens)))
+        let (data, net) = try await sendTimed(try request("messages", json: body(system: system, user: user, maxTokens: maxTokens)))
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ClaudeError(description: "bad response") }
         // Billed even if the text is then rejected (refusal, max_tokens), so record before reading it.
         let usage = TokenUsage(response: obj)
         let cost = usage.flatMap { ledger?.record(model: model, purpose: purpose, usage: $0) ?? Pricing.cost(model: model, usage: $0) }
-        return Completion(text: try Self.text(of: obj), usage: usage, costUSD: cost)
+        return Completion(text: try Self.text(of: obj), usage: usage, costUSD: cost, net: net)
     }
 
     /// Message Batches API: half price, asynchronous. Used for fixture and eval runs, never for dictation.

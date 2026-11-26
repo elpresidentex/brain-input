@@ -1,7 +1,7 @@
 import Foundation
 
 public struct SearchHit: Sendable, Codable, Equatable {
-    public var kind: String     // dictation | meeting
+    public var kind: String     // dictation | meeting | transcript
     public var ref: String      // path relative to the notes root (plus #id for dictations)
     public var title: String
     public var date: String
@@ -18,7 +18,7 @@ public final class NotesStore: @unchecked Sendable {
 
     public init(root: URL = BrainPaths.notesRoot) throws {
         self.root = root
-        for d in ["Dictations", "Meetings", "Style"] {
+        for d in ["Dictations", "Meetings", "Transcripts", "Style"] {
             try fm.createDirectory(at: root.appendingPathComponent(d), withIntermediateDirectories: true)
         }
         db = try SQLiteDB(path: root.appendingPathComponent(".index.sqlite").path)
@@ -86,22 +86,28 @@ public final class NotesStore: @unchecked Sendable {
     // MARK: Notes (meetings and anything else that is a whole Markdown file)
 
     @discardableResult
-    public func saveNote(folder: String, filename: String, title: String, date: Date, markdown: String) throws -> URL {
+    public func saveNote(folder: String, filename: String, title: String, date: Date, markdown: String,
+                         kind: String = "meeting") throws -> URL {
         let url = root.appendingPathComponent(folder).appendingPathComponent(filename)
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try markdown.write(to: url, atomically: true, encoding: .utf8)
-        try indexNote(rel: "\(folder)/\(filename)", title: title, date: Self.dayFmt.string(from: date), body: markdown)
+        try indexNote(rel: "\(folder)/\(filename)", title: title, date: Self.dayFmt.string(from: date), body: markdown, kind: kind)
         return url
     }
 
-    private func indexNote(rel: String, title: String, date: String, body: String) throws {
+    private func indexNote(rel: String, title: String, date: String, body: String, kind: String = "meeting") throws {
         try db.exec("DELETE FROM fts WHERE ref = ?", [rel])
-        try db.exec("INSERT INTO fts(kind, ref, title, date, body) VALUES('meeting',?,?,?,?)", [rel, title, date, body])
+        try db.exec("INSERT INTO fts(kind, ref, title, date, body) VALUES(?,?,?,?,?)", [kind, rel, title, date, body])
     }
 
-    public func meetings(limit: Int = 100) -> [SearchHit] {
-        let rows = (try? db.query("SELECT ref, title, date, substr(body, 1, 200) AS snip FROM fts WHERE kind='meeting' ORDER BY ref DESC LIMIT ?", [limit])) ?? []
-        return rows.map { SearchHit(kind: "meeting", ref: $0["ref"] as? String ?? "", title: $0["title"] as? String ?? "",
+    public func meetings(limit: Int = 100) -> [SearchHit] { notes(kind: "meeting", limit: limit) }
+
+    /// Transcripts of audio files, newest first.
+    public func transcripts(limit: Int = 100) -> [SearchHit] { notes(kind: "transcript", limit: limit) }
+
+    private func notes(kind: String, limit: Int) -> [SearchHit] {
+        let rows = (try? db.query("SELECT ref, title, date, substr(body, 1, 200) AS snip FROM fts WHERE kind=? ORDER BY ref DESC LIMIT ?", [kind, limit])) ?? []
+        return rows.map { SearchHit(kind: kind, ref: $0["ref"] as? String ?? "", title: $0["title"] as? String ?? "",
                                     date: $0["date"] as? String ?? "", snippet: $0["snip"] as? String ?? "") }
     }
 
@@ -147,10 +153,12 @@ public final class NotesStore: @unchecked Sendable {
                 }
             }
         }
-        for f in (try? fm.contentsOfDirectory(atPath: root.appendingPathComponent("Meetings").path)) ?? [] where f.hasSuffix(".md") {
-            let text = (try? String(contentsOf: root.appendingPathComponent("Meetings/\(f)"), encoding: .utf8)) ?? ""
-            let title = text.components(separatedBy: "\n").first { $0.hasPrefix("# ") }.map { String($0.dropFirst(2)) } ?? f
-            try indexNote(rel: "Meetings/\(f)", title: title, date: String(f.prefix(10)), body: text); n += 1
+        for (folder, kind) in [("Meetings", "meeting"), ("Transcripts", "transcript")] {
+            for f in (try? fm.contentsOfDirectory(atPath: root.appendingPathComponent(folder).path)) ?? [] where f.hasSuffix(".md") {
+                let text = (try? String(contentsOf: root.appendingPathComponent("\(folder)/\(f)"), encoding: .utf8)) ?? ""
+                let title = text.components(separatedBy: "\n").first { $0.hasPrefix("# ") }.map { String($0.dropFirst(2)) } ?? f
+                try indexNote(rel: "\(folder)/\(f)", title: title, date: String(f.prefix(10)), body: text, kind: kind); n += 1
+            }
         }
         return n
     }

@@ -106,11 +106,14 @@ final class OnboardingController: NSObject, NSWindowDelegate {
 
     func show() {
         if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 560), styleMask: [.titled, .closable, .fullSizeContentView],
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 680), styleMask: [.titled, .closable, .fullSizeContentView],
                          backing: .buffered, defer: false)
         w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isMovableByWindowBackground = true
         w.isReleasedWhenClosed = false; w.delegate = self
-        w.contentView = NSHostingView(rootView: OnboardingView(close: { [weak self] in self?.finish() })
+        // After "Restart Brain Input" the guide continues where it was.
+        let resume = Pref.d.integer(forKey: "onboardingResumeStep")
+        Pref.d.removeObject(forKey: "onboardingResumeStep")
+        w.contentView = NSHostingView(rootView: OnboardingView(close: { [weak self] in self?.finish() }, initialStep: resume)
             .environmentObject(AppState.shared).tint(Theme.accent))
         w.center()
         window = w
@@ -139,8 +142,11 @@ struct OnboardingView: View {
     @State private var checkingKey = false
     @State private var tryText = ""
     @State private var launchAtLogin = true
+    @State private var axChecks: Int
 
-    init(close: @escaping () -> Void, initialStep: Int = 0) { self.close = close; _step = State(initialValue: initialStep) }
+    init(close: @escaping () -> Void, initialStep: Int = 0, initialAXChecks: Int = 0) {
+        self.close = close; _step = State(initialValue: initialStep); _axChecks = State(initialValue: initialAXChecks)
+    }
 
     private let titles = ["Welcome", "Speech model", "Permissions", "Clean-up", "Try it"]
     private var hasModel: Bool { let _ = downloads.tick; return !ModelLocator.available().isEmpty }
@@ -178,7 +184,7 @@ struct OnboardingView: View {
                 }
             }.padding(16)
         }
-        .frame(width: 600, height: 560)
+        .frame(width: 760, height: 680)
         .task { while !Task.isCancelled { axTrusted = ClipboardPaster.trusted; mic = MicRecorder.permission; try? await Task.sleep(for: .seconds(1)) } }
     }
 
@@ -203,17 +209,21 @@ struct OnboardingView: View {
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
-                if let icon = NSApp.applicationIconImage { Image(nsImage: icon).resizable().frame(width: 64, height: 64) }
+                // The bundled icon file: the system's icon for the running app can come out as a generic alias folder.
+                if let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns").flatMap({ NSImage(contentsOf: $0) }) ?? NSApp.applicationIconImage {
+                    Image(nsImage: icon).resizable().frame(width: 64, height: 64)
+                }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Talk. It types.").font(.system(size: 34, weight: .semibold)).tracking(-1.2)
-                    Text("Brain Input turns what you say into clean text, in any app.").font(.title3).foregroundStyle(.secondary)
+                    Text("Dictation without $15/month").font(.system(size: 34, weight: .semibold)).tracking(-1.2)
+                    Text("Writes text like you would write it. In Gmail, WhatsApp, Claude Code.").font(.title3).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 8)
-            point("keyboard", "Hold a key, speak, release", "The text lands at your cursor, formatted for the app you are in: an email reads like an email, a chat message like a chat message.")
-            point("lock.laptopcomputer", "Speech recognition stays on this Mac", "Your audio is never uploaded. Only if you add your own Claude API key is the transcript text sent for clean-up.")
-            point("character.book.closed", "It learns your words", "Correct a name twice and it remembers. Meetings become Me / Them notes with a summary.")
+            point("keyboard", "Formatted for the app you are in", "Emails, chats and code prompts. Clean-up uses your own Claude API key.")
+            point("lock.laptopcomputer", "Your voice never leaves your Mac", "No word limit, no account, works offline.")
+            point("person.2.wave.2", "Meeting notes without a bot", "Transcribes your audio files too.")
+            point("square.stack.3d.up", "Your notes in Claude and Cursor", "Through MCP. It also learns your words and style.")
             Spacer()
-            Text("Free and open source. Setup takes about two minutes. The app counts that it was opened, anonymously; you can switch that off in Settings.").font(.callout).foregroundStyle(.secondary).padding(.bottom, 10)
+            Text("Free, open-source beta. The app sends an anonymous “opened” count; switch it off in Settings.").font(.callout).foregroundStyle(.secondary).padding(.bottom, 10)
         }
     }
 
@@ -221,9 +231,57 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             header("Download a speech model", "The model does the listening, on your Mac. This one download is all it needs from the internet.")
             ForEach(ModelLocator.catalog) { ModelCard(model: $0) }
-            if hasModel { Label(state.modelReady ? "Ready to listen." : state.modelStatus, systemImage: state.modelReady ? "checkmark.circle" : "hourglass")
-                .font(.callout).foregroundStyle(.secondary) }
+            // While a download runs its own progress bar is the status; a second "loading" line below it only confuses.
+            if !downloads.progress.isEmpty { EmptyView() }
+            else if hasModel { modelStatusLine }
             else { Text("Not sure? Take Parakeet. You can switch or add the other one later in Settings.").font(.callout).foregroundStyle(.secondary) }
+        }
+    }
+
+    /// Always names the model: the one in use can be a file put into the models folder by hand, which has no card above.
+    @ViewBuilder private var modelStatusLine: some View {
+        let name = ModelLocator.displayName(Pref.whisperModel)
+        if state.modelReady {
+            Label("\(name) is ready.", systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.green)
+        } else {
+            HStack(spacing: 10) {
+                Label(state.modelStatus.hasPrefix("Loading") ? "Loading \(name)… the first time can take a minute or two." : state.modelStatus,
+                      systemImage: "hourglass").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Try again") { state.loadModel() }.controlSize(.small)
+            }
+        }
+    }
+
+    private func recheckAccessibility() {
+        axTrusted = ClipboardPaster.trusted
+        if !axTrusted { axChecks += 1; Log.write("accessibility re-check \(axChecks): still not granted") }
+    }
+
+    private var accessibilityHelp: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Switched it on, but it still shows as missing?").font(.headline)
+            Text("1. In System Settings › Privacy & Security › Accessibility, check that the switch next to Brain Input is on.\n2. If it is already on, the entry probably belongs to an older copy of the app. Select it, remove it with “−”, then add this copy with “+”.\n3. Restart Brain Input. This guide opens on this page again.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Open Accessibility Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!) }
+                Button("Show this copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+                Button("Restart Brain Input") { restartApp() }
+            }
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.orange.opacity(0.35)))
+    }
+
+    private func restartApp() {
+        Pref.d.set(false, forKey: "onboardingDone")
+        Pref.d.set(step, forKey: "onboardingResumeStep")
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, error in
+            Task { @MainActor in
+                if let error { Log.write("restart failed: \(error.localizedDescription)") } else { NSApp.terminate(nil) }
+            }
         }
     }
 
@@ -252,7 +310,14 @@ struct OnboardingView: View {
                           ok: axTrusted, button: "Open prompt") {
                 _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
             }
-            Text("After you switch on Accessibility in System Settings, this page updates by itself.").font(.callout).foregroundStyle(.secondary)
+            if !axTrusted {
+                HStack(spacing: 10) {
+                    Text("Switched it on in System Settings?").font(.callout).foregroundStyle(.secondary)
+                    Button("Check again") { recheckAccessibility() }.controlSize(.small)
+                    if axChecks > 0 { Text("Still not granted.").font(.callout).foregroundStyle(.orange) }
+                }
+                if axChecks >= 2 { accessibilityHelp }
+            }
             Text("Meeting recording asks for System Audio the first time you use it.").font(.callout).foregroundStyle(.secondary)
         }
     }

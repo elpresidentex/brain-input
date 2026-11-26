@@ -70,6 +70,22 @@ One line per call made where the brief was silent, newest milestone last.
 - `read_note` and `brain read` refuse paths outside `~/BrainInput`.
 - The in-app note reader renders headings and inline Markdown line by line; it is a reader, not an editor. "Show in Finder" opens the file for your own editor.
 
+## Live dictation transcription
+- Each dictation is transcribed in chunks while recording (`IncrementalTranscriber`, `DictationCutter` in `Sources/BrainCore/LiveTranscription.swift`); after release only the open chunk is left. Before, the whole recording was transcribed again after release (about 30 ms per audio second on Parakeet, 5 to 17 s for five minutes).
+- Hand-written chunker rather than FluidAudio's `SlidingWindowAsrSession`: that one is Parakeet-only, keeps its own model and decoder state outside the `Transcriber` seam (whisper, meetings and mocks share it), and runs a 15 s window per 11 s of audio.
+- Chunks are contiguous (nothing is dropped, unlike the meeting cutter). Cut at a 0.6 s pause once a chunk holds 5 s (0.3 s past 9 s). At the 14 s cap, cut in the longest silent run, else the quietest 300 ms: a single quiet frame is often a plosive inside a word. 14 s keeps every Parakeet call inside its 15 s window.
+- Whisper's language is pinned after the first chunk of at least 3 s. Chunk texts are joined with one space.
+- A failed chunk, or no text at all, falls back to one full pass over the recording. Esc cancels queued chunks and skips the fallback.
+- The live preview shows committed chunks plus the open chunk only, and runs only while the engine is idle.
+- `ParakeetTranscriber` now serialises calls itself: as a reentrant actor it used to start a second call while the first waited on FluidAudio, so `queueWaitMs` read about 0 and the wait was booked as inference.
+
+## File transcription
+- A dropped file is one engine call over the whole file, as in VoiceInk (`FileTranscription` in `Sources/BrainCore/FileTranscription.swift`). The engine handles long audio itself: FluidAudio runs overlapping 15 s windows merged by token.
+- The first version reused the dictation cutter (about 10 s chunks). On a 164 s German voice message that differed from one pass of the same Parakeet model in 78 words: sentences ended at every cut, hyphenated compounds came apart, and words were lost at the seams. Now the output is word for word the one-pass output. Live dictation keeps its short chunks; there the wait after release matters more.
+- The cost: the engine serves one call at a time, about 34 ms per audio second on Parakeet, so during an hour-long file a dictation waits up to about 2 minutes. The indicator then says "Waiting for file transcription…". Progress is indeterminate, and Cancel discards the result once the call returns.
+- Timestamps and paragraphs come from Parakeet's token timings: one segment per sentence, a new paragraph only between sentences, at a pause of at least 1.2 s once a paragraph holds 20 s, always by 45 s. Whisper reports no timings here, so its paragraphs break by length and only span starts carry a time.
+- No clean-up model runs on file transcripts: they stay what the speech model heard. On the same message whisper large-v3-turbo got "Lehrerin" right but repeated one sentence four times and took 2:41 against 5 s for Parakeet, so Parakeet stays the default.
+
 ## Known gaps
 - Not built: modifier-only shortcut keys, app icon, launch at login, ScreenCaptureKit fallback for system audio, a "summarise later" action for notes written without a key, Spanish-specific work (whisper handles it; nothing was tested).
 - Model load time after a rebuild was anywhere from 1.8 s to 140 s across this session (Core ML compile cache); steady state is 2–3 s.

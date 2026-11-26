@@ -30,3 +30,6 @@ else
   echo "NOT NOTARIZED: no keychain profile '$PROFILE'. Gatekeeper will block this DMG on other Macs. See the top of this script."
 fi
 shasum -a 256 "$DMG"
+# The landing page links to .../releases/latest/download/BrainInput-latest.dmg, so each release also needs a copy without the version.
+# Upload both:  gh release upload "v$VERSION" "$DMG" build/BrainInput-latest.dmg --clobber
+cp "$DMG" build/BrainInput-latest.dmg

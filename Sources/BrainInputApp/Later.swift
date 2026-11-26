@@ -13,9 +13,9 @@ struct SearchView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search meetings and dictations", text: $query).textFieldStyle(.plain).font(.title3).onSubmit(run)
-                Picker("", selection: $kind) { Text("All").tag("all"); Text("Meetings").tag("meeting"); Text("Dictations").tag("dictation") }
-                    .pickerStyle(.segmented).frame(width: 240)
+                TextField("Search meetings, dictations and transcripts", text: $query).textFieldStyle(.plain).font(.title3).onSubmit(run)
+                Picker("", selection: $kind) { Text("All").tag("all"); Text("Meetings").tag("meeting"); Text("Dictations").tag("dictation"); Text("Transcripts").tag("transcript") }
+                    .pickerStyle(.segmented).frame(width: 330)
             }.padding(12)
             Divider()
             HSplitView {
