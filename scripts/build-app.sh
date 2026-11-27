@@ -16,6 +16,8 @@ fi
 [ -e Vendor/whisper.xcframework ] || scripts/setup-vendor.sh --quiet
 [ -e Vendor/whisper.xcframework ] || scripts/fetch-whisper.sh
 VERSION="${VERSION:-0.1.0}"
+# Oldest macOS the app runs on. Keep in step with `platforms` in Package.swift; the check below enforces it.
+MIN_OS=15.0
 swift build -c release 2>&1 | tail -3
 BIN=.build/release
 APP=build/BrainInput.app
@@ -37,7 +39,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>LSMinimumSystemVersion</key><string>$MIN_OS</string>
   <key>LSUIElement</key><false/>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>Free software under GPL-3.0. No warranty.</string>
@@ -46,6 +48,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSCalendarsFullAccessUsageDescription</key><string>Brain Input reads the current calendar event to title meeting notes and list participants.</string>
 </dict></plist>
 PLIST
+# Refuse an app whose binaries need a newer macOS than LSMinimumSystemVersion promises (a vendored whisper.framework
+# built for a newer macOS would otherwise only fail on the user's Mac, with "cannot use this version of macOS").
+for f in "$APP/Contents/MacOS/BrainInput" "$APP/Contents/MacOS/brain" "$APP/Contents/Frameworks/whisper.framework/whisper"; do
+  m=$(vtool -show-build "$f" 2>/dev/null | awk '$1=="minos"{print $2}' | sort -V | tail -1)
+  if [ -n "$m" ] && [ "$(printf '%s\n%s\n' "$m" "$MIN_OS" | sort -V | tail -1)" != "$MIN_OS" ]; then
+    echo "not building: $f needs macOS $m, but the app promises macOS $MIN_OS" >&2; exit 1
+  fi
+done
 # RELEASE=1: Developer ID, hardened runtime and a secure timestamp, as notarization requires (see scripts/release.sh).
 if [ "${RELEASE:-0}" = 1 ]; then
   ID="${BRAININPUT_SIGN_ID:-$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')}"

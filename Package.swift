@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "BrainInput",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     products: [
         .library(name: "BrainCore", targets: ["BrainCore"]),
         .library(name: "BrainWhisper", targets: ["BrainWhisper"]),

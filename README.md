@@ -19,7 +19,7 @@ This is a hobby project, built in a few weekend hours with Claude Fable doing mo
 2. Open it and drag **Brain Input** to Applications.
 3. Start it. The setup guide downloads a speech model (about 460 MB), asks for the two permissions it needs and lets you try a first dictation.
 
-Requirements: a Mac with Apple Silicon and macOS 26 or newer. About 1 GB of free disk space.
+Requirements: a Mac with Apple Silicon and macOS 15 (Sequoia) or newer. About 1 GB of free disk space.
 
 ## Use
 
